@@ -1,15 +1,21 @@
-""" This module handles TCP connections to the OpenWebNet gateway """
+""" This module handles connections to the OpenWebNet gateway """
 
+import socket
 import asyncio
+import serial_asyncio
+
 import hmac
 import hashlib
 import string
 import random
 import logging
+from typing import Union
 from urllib.parse import urlparse
 
 from .discovery import find_gateways, get_gateway, get_port
-from .message import OWNMessage, OWNSignaling
+from .message import OWNMessage, OWNSignaling, OWNGatewayEvent
+
+_logger = logging.getLogger("OWNd")
 
 
 class OWNGateway:
@@ -68,6 +74,18 @@ class OWNGateway:
         self.port = discovery_info["port"] if "port" in discovery_info else None
 
         self._log_id = f"[{self.model_name} gateway - {self.host}]"
+
+        self._is_zigbee = (
+            discovery_info["isZigbee"] if "isZigbee" in discovery_info else False
+        )
+
+    @property
+    def is_zigbee(self) -> bool:
+        return self._is_zigbee
+
+    @is_zigbee.setter
+    def is_zigbee(self, is_zigbee: bool) -> None:
+        self._is_zigbee = is_zigbee
 
     @property
     def unique_id(self) -> str:
@@ -159,6 +177,299 @@ class OWNGateway:
         return cls(discovery_info)
 
 
+class ZigbeeOWNGateway(OWNGateway):
+    def __init__(self, discovery_info: dict):
+        discovery_info["address"] = discovery_info["zigbee"] if "zigbee" in discovery_info else None
+        discovery_info["isZigbee"] = True
+        discovery_info["deviceType"] = "BT-3578/LG-088328"
+        discovery_info["friendlyName"] = "Zigbee - Interface OPEN/Zigbee"
+        discovery_info["manufacturer"] = "BTicino S.p.A. / Legrand"
+        discovery_info["modelName"] = "BT-3578/LG-088328"
+        super().__init__(discovery_info)
+
+    @classmethod
+    async def build_from_discovery_info(cls, discovery_info: dict):
+        return cls(discovery_info)
+
+class zigbeeSession:
+
+    SEPARATOR = "##".encode()
+
+    def __init__(self, gateway: OWNGateway = None, logger: logging.Logger = None):
+        self._gateway = gateway
+        self._logger = logger
+        self.event = asyncio.Event()
+        #annotations for stream reader/writer:
+        self._streamReaderSerial: asyncio.StreamReader
+        self._streamWriterSerial: asyncio.StreamWriter
+        self._streamReaderCmd: asyncio.StreamReader
+        self._streamWriterCmd: asyncio.StreamWriter
+        self._streamWriterEvent: asyncio.StreamWriter
+        self.invertedCover: bool
+        self.buggyDim: bool
+        # init them to None:
+        self._streamReaderCmd = None
+        self._streamWriterCmd = None
+        self._streamWriterEvent = None
+        self.firmware = None
+        self.invertedCover = False
+        self.buggyDim = False
+        self.dimReq = None
+    
+    async def connect(self) -> dict:
+        (
+            self._streamReaderSerial,
+            self._streamWriterSerial,
+        ) = await serial_asyncio.open_serial_connection(url=self._gateway.address, baudrate=19200)
+
+        dict = await self._negotiate()
+        if dict["Success"] is not True:
+            return dict
+        
+        dict = await self._serial_configure()
+        if dict["Success"] is not True:
+            return dict
+        
+        #open server socket for event / command
+        server = await asyncio.start_server( client_connected_cb = self.handle_client, host="localhost", port=20000)
+        self._logger.info(
+            "%s TCP server started on %d.", self._gateway.log_id, server.sockets[0].getsockname()[1]
+        )
+        self.receiver = asyncio.create_task(self._serial_receiver())
+
+    async def _cmd_receiver(self):
+        while True:
+            try:
+                self._logger.debug("waiting message...")
+                raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
+                message = raw_request.decode()
+                self._logger.info(" TCP REC receive <%s>",message)
+                if message.startswith("*#"):
+                    msg = OWNMessage.parse(message)
+                    self.dimReq = msg.where
+                else:
+                    self.dimReq = None
+                if self.invertedCover:
+                    if message.startswith("*2*1"):
+                        self._logger.debug("Fix inverted cover command Up -> Down")
+                        message = message.replace("*2*1","*2*2",1)
+                    elif message.startswith("*2*2"):
+                        self._logger.debug("Fix inverted cover command Down -> Up")
+                        message = message.replace("*2*2","*2*1",1)
+                self._streamWriterSerial.write(message.encode())
+                self.event.clear()
+                await self._streamWriterSerial.drain()
+                await self.event.wait()
+
+            except TimeoutError:
+                self._logger.debug("TCP REC Request TimeOut")
+            except asyncio.IncompleteReadError:
+                self._logger.warning("Connexion closed by peer.")
+                break
+            except asyncio.CancelledError:
+                self._logger.warning("Cancel.")
+                break
+
+        self._streamWriterCmd.close()
+        await self._streamWriterCmd.wait_closed()
+        self._streamWriterCmd = None
+        self._streamReaderCmd = None
+        self._logger.info("Command connexion closed.")
+
+    async def _serial_receiver(self):
+        while True:
+            try:
+                self._logger.debug("waiting message...")
+                raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
+                message = raw_response.decode()
+                self._logger.debug("REC receive <%s>",message)
+                msg = OWNMessage.parse(message)
+                if(msg is not None):                    
+                    if(msg.is_event):
+                        if self.buggyDim:
+                            if message.startswith("*2*1"):
+                                self._logger.debug("Fix inverted cover command Up -> Down")
+                                message = message.replace("*2*1","*2*2",1)
+                                msg = OWNMessage.parse(message)
+                            elif message.startswith("*2*2"):
+                                self._logger.debug("Fix inverted cover command Down -> Up")
+                                message = message.replace("*2*2","*2*1",1)
+                                msg = OWNMessage.parse(message)
+                        if msg.where is not None and msg.where == self.dimReq:
+                            if self._streamWriterCmd is not None:
+                                self._streamWriterCmd.write(message.encode())
+                            if self.buggyDim:
+                                self._streamWriterCmd.write("*#*1##".encode())
+                                self.event.set()
+                                event = False
+                        self._logger.info("SERIAL REC receive event <%s>",msg.human_readable_log)
+                        if self._streamWriterEvent is not None:
+                            self._streamWriterEvent.write(message.encode())
+                    else:
+                        self._logger.info("SERIAL REC receive message <%s>",msg.human_readable_log)
+                        if self._streamWriterCmd is not None:
+                            self._streamWriterCmd.write(raw_response)
+                        # TODO check if there are case to not clear...
+                        self.event.set()
+                        event = False
+                else:
+                    self._logger.warning("SERIAL REC cannot translate <%s>",message)
+            except TimeoutError:
+                pass
+            except asyncio.CancelledError:
+                self._logger.warning("SERIAL REC Cancel.")
+                break
+
+    async def handle_client(self, reader : asyncio.StreamReader, writer: asyncio.StreamWriter):
+        # on client connection send ACK and wait for connection type
+        writer.write(f"*#*1##".encode())
+        await writer.drain()
+        raw_response = await reader.readuntil(self.SEPARATOR)
+        resulting_message = OWNSignaling(raw_response.decode())
+        self._logger.debug("%s Reply: `%s`", self._gateway.log_id, resulting_message)
+        if resulting_message._type == "EVENT_SESSION":
+            if self._streamWriterEvent is not None:
+               self._streamWriterEvent.close()
+               await self._streamWriterEvent.wait_closed()
+               self._logger.debug("%s Previous Event session closed.", self._gateway.log_id)
+            self._streamWriterEvent = writer
+            self._logger.info("%s New Event session opened.", self._gateway.log_id)
+        elif resulting_message._type == "COMMAND_SESSION":
+            if self._streamWriterCmd is not None:
+               self._streamWriterCmd.close()
+               await self._streamWriterCmd.wait_closed()
+               self.command.cancel()
+               self._logger.debug("%s Previous Command session closed.", self._gateway.log_id)
+            self._streamWriterCmd = writer
+            self._streamReaderCmd = reader
+            self._logger.info("%s New Command session opened.", self._gateway.log_id)
+            self.command = asyncio.create_task(self._cmd_receiver())
+        else:
+            self._logger.error("%s Unexpected reply. Closing.", self._gateway.log_id)
+            writer.close()        
+        writer.write(f"*#*1##".encode())
+        await writer.drain()
+
+    async def _negotiate(self) -> dict:
+        error = False
+        error_message = None
+
+        self._logger.debug(
+            "%s Negotiating session.", self._gateway.log_id            
+        )
+        self._streamWriterSerial.write(f"*13*60*##".encode())
+        try:
+            await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 5)
+
+            raw_response = await asyncio.wait_for(
+            self._streamReaderSerial.readuntil(OWNSession.SEPARATOR),
+                timeout=5,
+            )
+            resulting_message = OWNSignaling(raw_response.decode())
+            if resulting_message.is_nack():
+                self._logger.error(
+                    "%s Error while opening session.", self._gateway.log_id
+                )
+                error = True
+                error_message = "connection_refused"
+            elif resulting_message.is_ack():
+                self._logger.debug(
+                    "%s session established successfully.",
+                    self._gateway.log_id,
+                )
+            else:
+                error = True
+                error_message = "negotiation_failed"
+                self._logger.debug(
+                    "%s Unexpected message during negotiation: %s",
+                    self._gateway.log_id,
+                    resulting_message,
+                )
+        except asyncio.TimeoutError:
+            error = True
+            error_message = "communication_error"
+            self._logger.error(
+                "%s Keep alive test timeout.",
+                self._gateway.log_id
+            )
+        return {"Success": not error, "Message": error_message}
+
+    async def _serial_configure(self):
+        error = False
+        error_message = None
+        self._logger.debug("%s Configuring session.", self._gateway.log_id)
+        # check firmware version of gateway
+        try:
+            self._logger.debug("%s Retrieve firmware version", self._gateway.log_id)
+            self._streamWriterSerial.write("*#13**16##".encode())
+            await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
+            while True:
+                raw_response = await asyncio.wait_for(
+                self._streamReaderSerial.readuntil(OWNSession.SEPARATOR),
+                    timeout=1,
+                )
+                resulting_message = OWNMessage.parse(raw_response.decode())
+                if isinstance(resulting_message, OWNSignaling):
+                    self._logger.debug("%s received signaling %s", self._gateway.log_id, resulting_message._human_readable_log)
+                    if resulting_message.is_nack():
+                        self._logger.error("%s Error while getting firmware version", self._gateway.log_id)
+                        error = True
+                        error_message = "cannot_get_firmware"
+                        break
+                    elif resulting_message.is_ack():
+                        break
+                else:
+                    resulting_message = OWNGatewayEvent(raw_response.decode())
+                    if isinstance(resulting_message, OWNGatewayEvent):
+                        self._logger.debug("%s received event %s", self._gateway.log_id, resulting_message._human_readable_log)
+                        if resulting_message._firmware_version is not None:
+                            self.firmware = resulting_message._firmware_version
+                    else:
+                        self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode())
+
+        except asyncio.TimeoutError:
+            error = True
+            error_message = "communication_error"
+            self._logger.error("%s Fail to get firmware.", self._gateway.log_id)
+
+        if error:
+            return {"Success": not error, "Message": error_message}
+        if self.firmware <="1.2.0":
+            self.invertedCover = True
+        if self.firmware <="1.2.3":
+            self.buggyDim = True
+        self._logger.info("%s Gateway firmware is %s (%s, %s).", self._gateway.log_id, self.firmware, "cover inverted" if self.invertedCover else "", "DIM buggy" if self.buggyDim else "")
+
+        # put gateway in supervisor mode
+        try:
+            self._logger.debug("%s Setting up supervisor mode", self._gateway.log_id)
+            self._streamWriterSerial.write("*13*66*##".encode())
+            await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
+            while True:
+                raw_response = await asyncio.wait_for(
+                self._streamReaderSerial.readuntil(OWNSession.SEPARATOR), timeout=1)
+
+                resulting_message = OWNMessage.parse(raw_response.decode())
+                if isinstance(resulting_message, OWNSignaling):
+                    self._logger.debug("%s received signaling %s", self._gateway.log_id, resulting_message._human_readable_log)
+                    if resulting_message.is_nack():
+                        self._logger.error("%s Error while setting supervisor mode", self._gateway.log_id)
+                        error = True
+                        error_message = "failed_supervisor_mode"
+                        break
+                    elif resulting_message.is_ack():
+                        self._logger.info("%s Gateway set in supervisor mode.", self._gateway.log_id)
+                        break
+                else:
+                    self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode())
+
+        except asyncio.TimeoutError:
+            error = True
+            error_message = "communication_error"
+            self._logger.error("%s Fail to set super visor mode.", self._gateway.log_id)
+
+        return {"Success": not error, "Message": error_message}
+
 class OWNSession:
     """Connection to OpenWebNet gateway"""
 
@@ -173,17 +484,20 @@ class OWNSession:
         """Initialize the class
         Arguments:
         logger: instance of logging
-        address: IP address of the OpenWebNet gateway
-        port: TCP port for the connection
-        password: OpenWebNet password
+        gateway: OpenWebNet gateway instance
+        connection_type: used when logging to identify this session
         """
 
         self._gateway = gateway
         self._type = connection_type.lower()
         self._logger = logger
 
+	# annotations for stream reader/writer:
         self._stream_reader: asyncio.StreamReader
         self._stream_writer: asyncio.StreamWriter
+        # init them to None:
+        self._stream_reader = None
+        self._stream_writer = None
 
     @property
     def gateway(self) -> OWNGateway:
@@ -193,13 +507,13 @@ class OWNSession:
     def gateway(self, gateway: OWNGateway) -> None:
         self._gateway = gateway
 
-    @property
-    def password(self) -> str:
-        return str(self._password)
-
-    @password.setter
-    def password(self, password: str) -> None:
-        self._password = password
+    # password is a property inside OWNGateway... right?
+    #@property
+    #def password(self) -> str:
+    #    return str(self._password)
+    #@password.setter
+    #def password(self, password: str) -> None:
+    #    self._password = password
 
     @property
     def logger(self) -> logging.Logger:
@@ -234,12 +548,20 @@ class OWNSession:
                         self._gateway.log_id,
                     )
                     return None
-                (
-                    self._stream_reader,
-                    self._stream_writer,
-                ) = await asyncio.open_connection(
-                    self._gateway.address, self._gateway.port
-                )
+                if self._gateway.is_zigbee:
+                    (
+                        self._stream_reader,
+                        self._stream_writer,
+                    ) = await serial_asyncio.open_serial_connection(
+                        url=self._gateway.address, baudrate=19200
+                    )
+                else:
+                    (
+                        self._stream_reader,
+                        self._stream_writer,
+                    ) = await asyncio.open_connection(
+                        self._gateway.address, self._gateway.port
+                    )
                 break
             except ConnectionRefusedError:
                 self._logger.warning(
@@ -252,7 +574,10 @@ class OWNSession:
                 retry_timer *= 2
 
         try:
-            result = await self._negotiate()
+            if self._gateway.is_zigbee:
+                result = await self._negotiate_zigbee()
+            else:
+                result = await self._negotiate()
             await self.close()
         except ConnectionResetError:
             error = True
@@ -272,7 +597,6 @@ class OWNSession:
 
         retry_count = 0
         retry_timer = 1
-
         while True:
             try:
                 if retry_count > 4:
@@ -282,13 +606,22 @@ class OWNSession:
                         self._type.capitalize(),
                     )
                     return None
-                (
-                    self._stream_reader,
-                    self._stream_writer,
-                ) = await asyncio.open_connection(
-                    self._gateway.address, self._gateway.port
-                )
-                return await self._negotiate()
+                if self._gateway.is_zigbee:
+                    (
+                        self._stream_reader,
+                        self._stream_writer,
+                    ) = await serial_asyncio.open_serial_connection(
+                        url=self._gateway.address, baudrate=19200
+                    )
+                    return await self._negotiate_zigbee()
+                else:
+                    (
+                        self._stream_reader,
+                        self._stream_writer,
+                    ) = await asyncio.open_connection(
+                        self._gateway.address, self._gateway.port
+                    )
+                    return await self._negotiate()
             except (ConnectionRefusedError, asyncio.IncompleteReadError):
                 self._logger.warning(
                     "%s %s session connection refused, retrying in %ss.",
@@ -310,11 +643,60 @@ class OWNSession:
 
     async def close(self) -> None:
         """Closes the connection to the OpenWebNet gateway"""
-        self._stream_writer.close()
-        await self._stream_writer.wait_closed()
+        # this method may be invoked on an empty instance of OWNSession, so be robust against Nones:
+        if self._stream_writer is not None:
+            self._stream_writer.close()
+            await self._stream_writer.wait_closed()
+        if self._gateway is not None:
+            self._logger.debug(
+                "%s %s session closed.", self._gateway.log_id, self._type.capitalize()
+            )
+
+    async def _negotiate_zigbee(self) -> dict:
+        type_id = 0 if self._type == "command" else 1
+        error = False
+        error_message = None
+
         self._logger.debug(
-            "%s %s session closed.", self._gateway.log_id, self._type.capitalize()
+            "%s Negotiating %s session.", self._gateway.log_id, self._type
         )
+        self._stream_writer.write(f"*13*60*##".encode())
+        try:
+            await asyncio.wait_for(self._stream_writer.drain(), timeout = 5)
+
+            raw_response = await asyncio.wait_for(
+            self._stream_reader.readuntil(OWNSession.SEPARATOR),
+                timeout=5,
+            )
+            resulting_message = OWNSignaling(raw_response.decode())
+            if resulting_message.is_nack():
+                self._logger.error(
+                    "%s Error while opening %s session.", self._gateway.log_id, self._type
+                )
+                error = True
+                error_message = "connection_refused"
+            elif resulting_message.is_ack():
+                self._logger.debug(
+                    "%s %s session established successfully.",
+                    self._gateway.log_id,
+                    self._type.capitalize(),
+                )
+            else:
+                error = True
+                error_message = "negotiation_failed"
+                self._logger.debug(
+                    "%s Unexpected message during negotiation: %s",
+                    self._gateway.log_id,
+                    resulting_message,
+                )
+        except asyncio.TimeoutError:
+            error = True
+            error_message = "communication_error"
+            self._logger.error(
+                "%s Keep alive test timeout.",
+                self._gateway.log_id
+            )        
+        return {"Success": not error, "Message": error_message}
 
     async def _negotiate(self) -> dict:
         type_id = 0 if self._type == "command" else 1
@@ -427,6 +809,9 @@ class OWNSession:
                                 # )
                                 self._stream_writer.write("*#*1##".encode())
                                 await self._stream_writer.drain()
+                                self._logger.debug(
+                                    "%s Session established successfully.", self._gateway.log_id
+                                )
                             else:
                                 self._logger.error(
                                     "%s Server identity could not be confirmed.",
@@ -481,7 +866,7 @@ class OWNSession:
                     )
                 elif resulting_message.is_ack():
                     self._logger.debug(
-                        "%s %s session established.",
+                        "%s %s session established successfully.",
                         self._gateway.log_id,
                         self._type.capitalize(),
                     )
@@ -496,7 +881,7 @@ class OWNSession:
         elif resulting_message.is_ack():
             # self._logger.debug("%s Reply: `%s`", self._gateway.log_id, resulting_message)
             self._logger.debug(
-                "%s %s session established.",
+                "%s %s session established successfully.",
                 self._gateway.log_id,
                 self._type.capitalize(),
             )
@@ -641,7 +1026,7 @@ class OWNEventSession(OWNSession):
         connection = cls(gateway)
         await connection.connect()
 
-    async def get_next(self):
+    async def get_next(self)-> Union[OWNMessage, str, None]:
         """Acts as an entry point to read messages on the event bus.
         It will read one frame and return it as an OWNMessage object"""
         try:

@@ -1,7 +1,10 @@
 """ This module contains OpenWebNet messages definition """  # pylint: disable=too-many-lines
 
+from __future__ import annotations
+
 import datetime
 import re
+from typing import Optional
 from dateutil.relativedelta import relativedelta
 import pytz
 
@@ -151,7 +154,7 @@ class OWNMessage:
             del self._dimension_value[0]
 
     @classmethod
-    def parse(cls, data):
+    def parse(cls, data) -> Optional[OWNMessage]:
         if (
             cls._ACK.match(data)
             or cls._NACK.match(data)
@@ -207,7 +210,7 @@ class OWNMessage:
         """The 'where' parameter corresponding to the bus interface of the subject of this message"""
         return (
             self._where_param[1]
-            if self._who in ["1", "2", "15"]
+            if self._who in [1, 2, 15]
             and len(self._where_param) > 0
             and self._where_param[0] == "4"
             else None
@@ -338,7 +341,7 @@ class OWNEvent(OWNMessage):
     """
 
     @classmethod
-    def parse(cls, data):
+    def parse(cls, data) -> Optional[OWNEvent]:
         _match = re.match(r"^\*#?(?P<who>\d+)\*.+##$", data)
 
         if _match:
@@ -373,7 +376,7 @@ class OWNEvent(OWNMessage):
             elif _who > 1000:
                 return cls(data)
 
-        return data
+        return None
 
 
 class OWNScenarioEvent(OWNEvent):
@@ -769,6 +772,9 @@ class OWNHeatingEvent(OWNEvent):
                 or self._dimension_value[0] == "00"
                 or self._dimension_value[0] == "4"
                 or self._dimension_value[0] == "5"
+                or self._dimension_value[0] == "6"
+                or self._dimension_value[0] == "7"
+                or self._dimension_value[0] == "8"
             ):
                 self._local_offset = 0
             elif self._dimension_value[0].startswith("0"):
@@ -1602,7 +1608,7 @@ class OWNCommand(OWNMessage):
     """
 
     @classmethod
-    def parse(cls, data):
+    def parse(cls, data)-> Optional[OWNCommand]:
         _match = re.match(r"^\*#?(?P<who>\d+)\*.+##$", data)
 
         if _match:

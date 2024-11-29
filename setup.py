@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """ PyPi setup file for OWNd. """
 
 import setuptools
@@ -20,6 +22,6 @@ setuptools.setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    install_requires=["aiohttp", "pytz", "python-dateutil"],
+    install_requires=["aiohttp", "pytz", "python-dateutil", "pyserial-asyncio" ],
     python_requires=">=3.8",
 )
