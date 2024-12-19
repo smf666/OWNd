@@ -13,9 +13,9 @@ from .connection import OWNEventSession, OWNGateway, ZigbeeOWNGateway, zigbeeSes
 async def main(arguments: dict, connection: OWNEventSession) -> None:
     """Package entry point!"""
 
-    zigbee = (
-        arguments["zigbee"]
-        if "zigbee" in arguments and isinstance(arguments["zigbee"], str)
+    serialPort = (
+        arguments["serialPort"]
+        if "serialPort" in arguments and isinstance(arguments["serialPort"], str)
         else None
     )
     address = (
@@ -44,14 +44,18 @@ async def main(arguments: dict, connection: OWNEventSession) -> None:
         else None
     )
 
-    if zigbee is not None:
+    if serialPort is not None:
 	    # case of zigbee
-        logger.info("Starting Zigbee/OPEN on serial port <%s>", zigbee)
+        logger.info("Starting Zigbee/OPEN on serial port <%s>", serialPort)
         gateway = await ZigbeeOWNGateway.build_from_discovery_info(
             {
-                "zigbee": zigbee,
+                "serialPort": serialPort,
+                "port": port,
             }
         )
+        zb = zigbeeSession(gateway, _logger)
+        await zb.connect()
+        logger.info("Zigbee/OPEN Gateway ready.")
     else:
         logger.info("Starting discovery of a supported gateway via SSDP")
         gateway = await OWNGateway.build_from_discovery_info(
@@ -62,30 +66,30 @@ async def main(arguments: dict, connection: OWNEventSession) -> None:
             "serialNumber": serial_number,
         }
         )
-    zb = zigbeeSession(gateway, _logger)
 
-    await zb.connect()
+    connection.gateway = gateway
+    
+    if logger is not None:
+        connection.logger = logger
 
-    #connection.gateway = gateway
-    #
-    #if logger is not None:
-    #     connection.logger = logger
+    res = await connection.test_connection()
+    if res["Success"]:
+        logger.info("Starting connection to the discovered gateway")
+        await connection.connect()
 
-    #res = await connection.test_connection()
-    #if res["Success"]:
-    #    logger.info("Starting connection to the discovered gateway")
-    #    await connection.connect()
-
-    #    logger.info("Now waiting for events from the gateway (e.g. a cover opening/closing)")
-    #    while True:
-    #        message = await connection.get_next()
-    #        if message:
-    #            logger.debug("Received: %s", message)
-    #            if isinstance(message, OWNMessage) and message.is_event:
-    #                logger.info(message.human_readable_log)
-    #else:
-    #    logger.error("Error during test: %s", res["Message"])
-
+        logger.info("Now waiting for events from the gateway (e.g. a cover opening/closing)")
+        try:
+            while True:
+                message = await connection.get_next()
+                if message:
+                    logger.debug("Received: %s", message)
+                    if isinstance(message, OWNMessage) and message.is_event:
+                        logger.info(message.human_readable_log)
+        finally:
+            if zb is not None:
+                await zb.close()
+    else:
+        logger.error("Error during test: %s", res["Message"])
 
 if __name__ == "__main__":
 
@@ -146,7 +150,7 @@ if __name__ == "__main__":
 
     event_session = OWNEventSession(gateway=None, logger=_logger)
     _arguments = {
-        "zigbee": args.zigbee,
+        "serialPort": args.zigbee,
         "address": args.address,
         "port": args.port,
         "password": args.password,

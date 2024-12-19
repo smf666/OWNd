@@ -73,11 +73,17 @@ class OWNGateway:
         # Attributes retrieved from SOAP service control
         self.port = discovery_info["port"] if "port" in discovery_info else None
 
-        self._log_id = f"[{self.model_name} gateway - {self.host}]"
-
+        # Attributes for zigbee
         self._is_zigbee = (
             discovery_info["isZigbee"] if "isZigbee" in discovery_info else False
         )
+        self._serial_port = (
+            discovery_info["serialPort"] if "serialPort" in discovery_info else False
+        )
+
+        path = self._serial_port if self.is_zigbee else self.host
+        self._log_id = f"[{self.model_name} gateway - {path}]"
+
 
     @property
     def is_zigbee(self) -> bool:
@@ -86,6 +92,14 @@ class OWNGateway:
     @is_zigbee.setter
     def is_zigbee(self, is_zigbee: bool) -> None:
         self._is_zigbee = is_zigbee
+
+    @property
+    def serial_port(self) -> bool:
+        return self._serial_port
+
+    @serial_port.setter
+    def is_zigbee(self, serial_port: str) -> None:
+        self._serial_port = serial_port
 
     @property
     def unique_id(self) -> str:
@@ -179,7 +193,8 @@ class OWNGateway:
 
 class ZigbeeOWNGateway(OWNGateway):
     def __init__(self, discovery_info: dict):
-        discovery_info["address"] = discovery_info["zigbee"] if "zigbee" in discovery_info else None
+        discovery_info["serialPort"] = discovery_info["serialPort"] if "serialPort" in discovery_info else None
+        discovery_info["address"] = "localhost"
         discovery_info["isZigbee"] = True
         discovery_info["deviceType"] = "BT-3578/LG-088328"
         discovery_info["friendlyName"] = "Zigbee - Interface OPEN/Zigbee"
@@ -215,12 +230,15 @@ class zigbeeSession:
         self.invertedCover = False
         self.buggyDim = False
         self.dimReq = None
-    
+        self.receiver = None
+        self.command = None
+        self.server = None
+
     async def connect(self) -> dict:
         (
             self._streamReaderSerial,
             self._streamWriterSerial,
-        ) = await serial_asyncio.open_serial_connection(url=self._gateway.address, baudrate=19200)
+        ) = await serial_asyncio.open_serial_connection(url=self._gateway._serial_port, baudrate=19200)
 
         dict = await self._negotiate()
         if dict["Success"] is not True:
@@ -231,10 +249,12 @@ class zigbeeSession:
             return dict
         
         #open server socket for event / command
-        server = await asyncio.start_server( client_connected_cb = self.handle_client, host="localhost", port=20000)
+        self._logger.info("Start server on %s:%s", self._gateway.address, self._gateway.port if self._gateway.port is not None else 0)
+        self.server = await asyncio.start_server( client_connected_cb = self.handle_client, host="localhost", port=self._gateway.port if self._gateway.port is not None else 0)
         self._logger.info(
-            "%s TCP server started on %d.", self._gateway.log_id, server.sockets[0].getsockname()[1]
+            "%s TCP server started on %d.", self._gateway.log_id, self.server.sockets[0].getsockname()[1]
         )
+        self._gateway.port = self.server.sockets[0].getsockname()[1]
         self.receiver = asyncio.create_task(self._serial_receiver())
 
     async def _cmd_receiver(self):
@@ -286,7 +306,7 @@ class zigbeeSession:
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
                     if(msg.is_event):
-                        if self.buggyDim:
+                        if self.invertedCover:
                             if message.startswith("*2*1"):
                                 self._logger.debug("Fix inverted cover command Up -> Down")
                                 message = message.replace("*2*1","*2*2",1)
@@ -319,6 +339,19 @@ class zigbeeSession:
             except asyncio.CancelledError:
                 self._logger.warning("SERIAL REC Cancel.")
                 break
+
+        if self._streamWriterCmd is not None:
+            self._streamWriterCmd.close()
+            await self._streamWriterCmd.wait_closed()
+        if self._streamWriterEvent is not None:
+            self._streamWriterEvent.close()
+            await self._streamWriterEvent.wait_closed()
+            self._streamWriterEvent = None
+        self._streamWriterSerial.close()
+        await self._streamWriterSerial.wait_closed()
+        self._streamWriterSerial = None
+        self._streamReaderSerial = None
+        self._logger.info("Serial connexion closed.")
 
     async def handle_client(self, reader : asyncio.StreamReader, writer: asyncio.StreamWriter):
         # on client connection send ACK and wait for connection type
@@ -438,7 +471,7 @@ class zigbeeSession:
             self.invertedCover = True
         if self.firmware <="1.2.3":
             self.buggyDim = True
-        self._logger.info("%s Gateway firmware is %s (%s, %s).", self._gateway.log_id, self.firmware, "cover inverted" if self.invertedCover else "", "DIM buggy" if self.buggyDim else "")
+        self._logger.info("%s Gateway firmware is %s (cover inverted=%s, DIM bug=%s).", self._gateway.log_id, self.firmware, self.invertedCover, self.buggyDim)
 
         # put gateway in supervisor mode
         try:
@@ -470,6 +503,23 @@ class zigbeeSession:
 
         return {"Success": not error, "Message": error_message}
 
+    async def close(self) -> None:
+        """Closes the connection to the OpenWebNet zigbee gateway"""
+        # this method may be invoked on an empty instance of OWNSession, so be robust against Nones:
+        if self.server is not None:
+            self.server.close()
+            await self.server.wait_closed()
+            self._gateway.port = None
+            self.command = None
+        if self.command is not None:
+            self.command.cancel()
+            await self.command
+            self.command = None
+        if self.receiver is not None:
+            self.receiver.cancel()
+            await self.receiver
+            self.receiver = None
+
 class OWNSession:
     """Connection to OpenWebNet gateway"""
 
@@ -492,12 +542,14 @@ class OWNSession:
         self._type = connection_type.lower()
         self._logger = logger
 
-	# annotations for stream reader/writer:
+	    # annotations for stream reader/writer and zigbee:
         self._stream_reader: asyncio.StreamReader
         self._stream_writer: asyncio.StreamWriter
+        self.zb : zigbeeSession
         # init them to None:
         self._stream_reader = None
         self._stream_writer = None
+        self.zb = None
 
     @property
     def gateway(self) -> OWNGateway:
@@ -543,25 +595,18 @@ class OWNSession:
         while True:
             try:
                 if retry_count > 2:
-                    self._logger.error(
+                   self._logger.error(
                         "%s Test session connection still refused after 3 attempts.",
                         self._gateway.log_id,
-                    )
-                    return None
-                if self._gateway.is_zigbee:
-                    (
-                        self._stream_reader,
-                        self._stream_writer,
-                    ) = await serial_asyncio.open_serial_connection(
-                        url=self._gateway.address, baudrate=19200
-                    )
-                else:
-                    (
-                        self._stream_reader,
-                        self._stream_writer,
-                    ) = await asyncio.open_connection(
-                        self._gateway.address, self._gateway.port
-                    )
+                   )
+                   return None
+                
+                (
+                    self._stream_reader,
+                    self._stream_writer,
+                ) = await asyncio.open_connection(
+                    self._gateway.address, self._gateway.port
+                )
                 break
             except ConnectionRefusedError:
                 self._logger.warning(
@@ -574,10 +619,7 @@ class OWNSession:
                 retry_timer *= 2
 
         try:
-            if self._gateway.is_zigbee:
-                result = await self._negotiate_zigbee()
-            else:
-                result = await self._negotiate()
+            result = await self._negotiate()
             await self.close()
         except ConnectionResetError:
             error = True
@@ -606,22 +648,13 @@ class OWNSession:
                         self._type.capitalize(),
                     )
                     return None
-                if self._gateway.is_zigbee:
-                    (
-                        self._stream_reader,
-                        self._stream_writer,
-                    ) = await serial_asyncio.open_serial_connection(
-                        url=self._gateway.address, baudrate=19200
-                    )
-                    return await self._negotiate_zigbee()
-                else:
-                    (
-                        self._stream_reader,
-                        self._stream_writer,
-                    ) = await asyncio.open_connection(
-                        self._gateway.address, self._gateway.port
-                    )
-                    return await self._negotiate()
+                (
+                    self._stream_reader,
+                    self._stream_writer,
+                ) = await asyncio.open_connection(
+                    self._gateway.address, self._gateway.port
+                )
+                return await self._negotiate()
             except (ConnectionRefusedError, asyncio.IncompleteReadError):
                 self._logger.warning(
                     "%s %s session connection refused, retrying in %ss.",
@@ -651,52 +684,6 @@ class OWNSession:
             self._logger.debug(
                 "%s %s session closed.", self._gateway.log_id, self._type.capitalize()
             )
-
-    async def _negotiate_zigbee(self) -> dict:
-        type_id = 0 if self._type == "command" else 1
-        error = False
-        error_message = None
-
-        self._logger.debug(
-            "%s Negotiating %s session.", self._gateway.log_id, self._type
-        )
-        self._stream_writer.write(f"*13*60*##".encode())
-        try:
-            await asyncio.wait_for(self._stream_writer.drain(), timeout = 5)
-
-            raw_response = await asyncio.wait_for(
-            self._stream_reader.readuntil(OWNSession.SEPARATOR),
-                timeout=5,
-            )
-            resulting_message = OWNSignaling(raw_response.decode())
-            if resulting_message.is_nack():
-                self._logger.error(
-                    "%s Error while opening %s session.", self._gateway.log_id, self._type
-                )
-                error = True
-                error_message = "connection_refused"
-            elif resulting_message.is_ack():
-                self._logger.debug(
-                    "%s %s session established successfully.",
-                    self._gateway.log_id,
-                    self._type.capitalize(),
-                )
-            else:
-                error = True
-                error_message = "negotiation_failed"
-                self._logger.debug(
-                    "%s Unexpected message during negotiation: %s",
-                    self._gateway.log_id,
-                    resulting_message,
-                )
-        except asyncio.TimeoutError:
-            error = True
-            error_message = "communication_error"
-            self._logger.error(
-                "%s Keep alive test timeout.",
-                self._gateway.log_id
-            )        
-        return {"Success": not error, "Message": error_message}
 
     async def _negotiate(self) -> dict:
         type_id = 0 if self._type == "command" else 1
