@@ -249,9 +249,8 @@ class zigbeeSession:
             return dict
         
         #open server socket for event / command
-        self._logger.info("Start server on %s:%s", self._gateway.address, self._gateway.port if self._gateway.port is not None else 0)
         self.server = await asyncio.start_server( client_connected_cb = self.handle_client, host="localhost", port=self._gateway.port if self._gateway.port is not None else 0)
-        self._logger.info(
+        self._logger.debug(
             "%s TCP server started on %d.", self._gateway.log_id, self.server.sockets[0].getsockname()[1]
         )
         self._gateway.port = self.server.sockets[0].getsockname()[1]
@@ -263,7 +262,7 @@ class zigbeeSession:
                 self._logger.debug("waiting message...")
                 raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
                 message = raw_request.decode()
-                self._logger.info(" TCP REC receive <%s>",message)
+                self._logger.debug(" TCP REC receive <%s>",message)
                 if message.startswith("*#"):
                     msg = OWNMessage.parse(message)
                     self.dimReq = msg.where
@@ -287,7 +286,7 @@ class zigbeeSession:
                 self._logger.warning("Connexion closed by peer.")
                 break
             except asyncio.CancelledError:
-                self._logger.warning("Cancel.")
+                self._logger.debug("Cancel.")
                 break
 
         self._streamWriterCmd.close()
@@ -322,11 +321,11 @@ class zigbeeSession:
                                 self._streamWriterCmd.write("*#*1##".encode())
                                 self.event.set()
                                 event = False
-                        self._logger.info("SERIAL REC receive event <%s>",msg.human_readable_log)
+                        self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
                         if self._streamWriterEvent is not None:
                             self._streamWriterEvent.write(message.encode())
                     else:
-                        self._logger.info("SERIAL REC receive message <%s>",msg.human_readable_log)
+                        self._logger.debug("SERIAL REC receive message <%s>",msg.human_readable_log)
                         if self._streamWriterCmd is not None:
                             self._streamWriterCmd.write(raw_response)
                         # TODO check if there are case to not clear...
@@ -337,7 +336,7 @@ class zigbeeSession:
             except TimeoutError:
                 pass
             except asyncio.CancelledError:
-                self._logger.warning("SERIAL REC Cancel.")
+                self._logger.debug("SERIAL REC Cancel.")
                 break
 
         if self._streamWriterCmd is not None:
@@ -472,7 +471,6 @@ class zigbeeSession:
         if self.firmware <="1.2.3":
             self.buggyDim = True
         self._logger.info("%s Gateway firmware is %s (cover inverted=%s, DIM bug=%s).", self._gateway.log_id, self.firmware, self.invertedCover, self.buggyDim)
-
         # put gateway in supervisor mode
         try:
             self._logger.debug("%s Setting up supervisor mode", self._gateway.log_id)
@@ -491,7 +489,7 @@ class zigbeeSession:
                         error_message = "failed_supervisor_mode"
                         break
                     elif resulting_message.is_ack():
-                        self._logger.info("%s Gateway set in supervisor mode.", self._gateway.log_id)
+                        self._logger.debug("%s Gateway set in supervisor mode.", self._gateway.log_id)
                         break
                 else:
                     self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode())
@@ -1079,7 +1077,7 @@ class OWNCommandSession(OWNSession):
                     )
                 elif resulting_message.is_ack():
                     if not is_status_request:
-                        self._logger.info(
+                        self._logger.debug(
                             "%s Message `%s` was successfully sent.",
                             self._gateway.log_id,
                             message,
@@ -1095,7 +1093,7 @@ class OWNCommandSession(OWNSession):
                 and resulting_message.is_ack()
             ):
                 if not is_status_request:
-                    self._logger.info(
+                    self._logger.debug(
                         "%s Message `%s` was successfully sent.",
                         self._gateway.log_id,
                         message,
@@ -1121,7 +1119,7 @@ class OWNCommandSession(OWNSession):
                     )
                 elif resulting_message.is_ack():
                     if not is_status_request:
-                        self._logger.info(
+                        self._logger.debug(
                             "%s Message `%s` was successfully sent.",
                             self._gateway.log_id,
                             message,
