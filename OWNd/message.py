@@ -7,6 +7,7 @@ import re
 from typing import Optional
 from dateutil.relativedelta import relativedelta
 import pytz
+import logging
 
 MESSAGE_TYPE_ACTIVE_POWER = "active_power"
 MESSAGE_TYPE_ENERGY_TOTALIZER = "energy_totalizer"
@@ -36,6 +37,7 @@ CLIMATE_MODE_AUTO = "auto"
 
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
+logger = logging.getLogger("OWNd")
 
 class OWNMessage:
     _ACK = re.compile(r"^\*#\*1##$")  #  *#*1##
@@ -368,8 +370,10 @@ class OWNEvent(OWNMessage):
             elif _who == 18:
                 return OWNEnergyEvent(data)
             elif _who == 25:
-                _where = re.match(r"^\*.+\*(?P<where>\d+)##$", data).group("where")
+                _where = re.match(r"^\*.+\*(?P<where>\d+)\*.+##$", data).group("where")
+                logger.info("where = %s", _where)
                 if _where.startswith("2"):
+                    logger.info("OWNCEN+")
                     return OWNCENPlusEvent(data)
                 elif _where.startswith("3"):
                     return OWNDryContactEvent(data)
@@ -1543,8 +1547,14 @@ class OWNCENPlusEvent(OWNEvent):
         super().__init__(data)
 
         self._state = self._what
-        self.push_button = int(self._what_param[0])
         self.object = self._where[1:]
+        if(self._where_param[0] == '9'):
+            index = len(self.object)
+            self.push_button = int(self.object[index-2:])
+            self.object = self._where[1:index-1]+"00"
+        else:
+            self.push_button = int(self._what_param[0])
+        logger.info("state=%s, push=%d, object=%s",self._state, self.push_button, self.object);
 
         if self._state == 21:
             self._human_readable_log = f"Button {self.push_button} of CEN+ object {self.object} has been pressed"  # pylint: disable=line-too-long
