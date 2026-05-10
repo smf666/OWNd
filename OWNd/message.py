@@ -5,9 +5,9 @@ from __future__ import annotations
 import datetime
 import re
 from typing import Optional
-
 from dateutil.relativedelta import relativedelta
 import pytz
+import logging
 
 MESSAGE_TYPE_ACTIVE_POWER = "active_power"
 MESSAGE_TYPE_ENERGY_TOTALIZER = "energy_totalizer"
@@ -37,6 +37,7 @@ CLIMATE_MODE_AUTO = "auto"
 
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
+logger = logging.getLogger("OWNd")
 
 class OWNMessage:
     _ACK = re.compile(r"^\*#\*1##$")  #  *#*1##
@@ -211,7 +212,7 @@ class OWNMessage:
         """The 'where' parameter corresponding to the bus interface of the subject of this message"""
         return (
             self._where_param[1]
-            if self._who in ["1", "2", "15"]
+            if self._who in [1, 2, 15]
             and len(self._where_param) > 0
             and self._where_param[0] == "4"
             else None
@@ -369,8 +370,10 @@ class OWNEvent(OWNMessage):
             elif _who == 18:
                 return OWNEnergyEvent(data)
             elif _who == 25:
-                _where = re.match(r"^\*.+\*(?P<where>\d+)##$", data).group("where")
+                _where = re.match(r"^\*.+\*(?P<where>\d+)\*.+##$", data).group("where")
+                logger.info("where = %s", _where)
                 if _where.startswith("2"):
+                    logger.info("OWNCEN+")
                     return OWNCENPlusEvent(data)
                 elif _where.startswith("3"):
                     return OWNDryContactEvent(data)
@@ -1544,8 +1547,14 @@ class OWNCENPlusEvent(OWNEvent):
         super().__init__(data)
 
         self._state = self._what
-        self.push_button = int(self._what_param[0])
         self.object = self._where[1:]
+        if(self._where_param[0] == '9'):
+            index = len(self.object)
+            self.push_button = int(self.object[index-2:])
+            self.object = self._where[1:index-1]+"00"
+        else:
+            self.push_button = int(self._what_param[0])
+        logger.info("state=%s, push=%d, object=%s",self._state, self.push_button, self.object);
 
         if self._state == 21:
             self._human_readable_log = f"Button {self.push_button} of CEN+ object {self.object} has been pressed"  # pylint: disable=line-too-long
@@ -1609,7 +1618,7 @@ class OWNCommand(OWNMessage):
     """
 
     @classmethod
-    def parse(cls, data) -> Optional[OWNCommand]:
+    def parse(cls, data)-> Optional[OWNCommand]:
         _match = re.match(r"^\*#?(?P<who>\d+)\*.+##$", data)
 
         if _match:
@@ -1724,10 +1733,17 @@ class OWNLightingCommand(OWNCommand):
         return message
 
     @classmethod
-    def set_brightness(cls, where, _level=30, _transition=0):
-        command_level = int(_level) + 100
-        transition_speed = _transition if _transition >= 0 and _transition <= 255 else 0
-        message = cls(f"*#1*{where}*#1*{command_level}*{transition_speed}##")
+    def set_brightness(cls, where, _level=30, _transition=0, stepped=False):
+        if stepped:
+            command_level = (int(_level)+4) // 10
+            if command_level == 1:
+                command_level=2
+            transition_speed = 0
+            message = cls(f"*1*{command_level}*{where}##")    
+        else:
+            command_level = int(_level) + 100
+            transition_speed = _transition if _transition >= 0 and _transition <= 255 else 0
+            message = cls(f"*#1*{where}*#1*{command_level}*{transition_speed}##")
         message._human_readable_log = (
             f"Setting light {message._where}{message._interface_log_text} brightness to {_level}% with transition speed {transition_speed}."  # pylint: disable=line-too-long
             if transition_speed > 0

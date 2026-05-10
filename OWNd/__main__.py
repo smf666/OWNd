@@ -7,12 +7,17 @@ import logging
 
 from OWNd.message import OWNMessage
 
-from .connection import OWNEventSession, OWNGateway
+from .connection import OWNEventSession, OWNGateway, ZigbeeOWNGateway, zigbeeSession
 
 
 async def main(arguments: dict, connection: OWNEventSession) -> None:
     """Package entry point!"""
 
+    serialPort = (
+        arguments["serialPort"]
+        if "serialPort" in arguments and isinstance(arguments["serialPort"], str)
+        else None
+    )
     address = (
         arguments["address"]
         if "address" in arguments and isinstance(arguments["address"], str)
@@ -39,32 +44,59 @@ async def main(arguments: dict, connection: OWNEventSession) -> None:
         else None
     )
 
-    gateway = await OWNGateway.build_from_discovery_info(
+    if serialPort is not None:
+	    # case of zigbee
+        logger.info("Starting Zigbee/OPEN on serial port <%s>", serialPort)
+        gateway = await ZigbeeOWNGateway.build_from_discovery_info(
+            {
+                "serialPort": serialPort,
+                "port": port,
+            }
+        )
+        zb = zigbeeSession(gateway, _logger)
+        await zb.connect()
+        logger.info("Zigbee/OPEN Gateway ready.")
+    else:
+        logger.info("Starting discovery of a supported gateway via SSDP")
+        gateway = await OWNGateway.build_from_discovery_info(
         {
             "address": address,
             "port": port,
             "password": password,
             "serialNumber": serial_number,
         }
-    )
-    connection.gateway = gateway
+        )
 
+    connection.gateway = gateway
+    
     if logger is not None:
         connection.logger = logger
 
-    await connection.connect()
+    res = await connection.test_connection()
+    if res["Success"]:
+        logger.info("Starting connection to the discovered gateway")
+        await connection.connect()
 
-    while True:
-        message = await connection.get_next()
-        if message:
-            logger.debug("Received: %s", message)
-            if isinstance(message, OWNMessage) and message.is_event:
-                logger.info(message.human_readable_log)
-
+        logger.info("Now waiting for events from the gateway (e.g. a cover opening/closing)")
+        try:
+            while True:
+                message = await connection.get_next()
+                if message:
+                    logger.debug("Received: %s", message)
+                    if isinstance(message, OWNMessage) and message.is_event:
+                        logger.info(message.human_readable_log)
+        finally:
+            if zb is not None:
+                await zb.close()
+    else:
+        logger.error("Error during test: %s", res["Message"])
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-z", "--zigbee", type=str, help="Serial port of Zigbee/Open gateway"
+    )
     parser.add_argument(
         "-a", "--address", type=str, help="IP address of the OpenWebNet gateway"
     )
@@ -116,8 +148,9 @@ if __name__ == "__main__":
     # add the handlers to the logger
     _logger.addHandler(log_stream_handler)
 
-    event_session = OWNEventSession()
+    event_session = OWNEventSession(gateway=None, logger=_logger)
     _arguments = {
+        "serialPort": args.zigbee,
         "address": args.address,
         "port": args.port,
         "password": args.password,
@@ -134,10 +167,13 @@ if __name__ == "__main__":
         loop.run_forever()
         # asyncio.run(main(arguments))
     except KeyboardInterrupt:
-        _logger.info("Stoping OWNd.")
-        main_task.cancel()
-        loop.run_until_complete(event_session.close())
-        loop.stop()
-        loop.close()
+        try:
+            _logger.info("Stoping OWNd.")
+            # get all task in current loop
+            main_task.cancel()
+            loop.run_until_complete(event_session.close())
+        finally:
+            loop.stop()
+            loop.close()
     finally:
         _logger.info("OWNd stopped.")
