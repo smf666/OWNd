@@ -508,17 +508,17 @@ class zigbeeSession:
             self.server.close()
             await self.server.wait_closed()
             self._gateway.port = None
-			LOGGER.debug("Server closed")
+			self.logger.debug("Server closed")
         if self.command is not None:
             self.command.cancel()
             await self.command
             self.command = None
-			LOGGER.debug("Command closed")
+			self.logger.debug("Command closed")
         if self.receiver is not None:
             self.receiver.cancel()
             await self.receiver
             self.receiver = None
-			LOGGER.debug("Receiver closed")
+			self.logger.debug("Receiver closed")
 
 class OWNSession:
     """Connection to OpenWebNet gateway"""
