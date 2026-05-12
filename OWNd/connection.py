@@ -508,7 +508,6 @@ class zigbeeSession:
             self.server.close()
             await self.server.wait_closed()
             self._gateway.port = None
-            self.command = None
         if self.command is not None:
             self.command.cancel()
             await self.command
