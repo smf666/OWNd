@@ -504,21 +504,23 @@ class zigbeeSession:
     async def close(self) -> None:
         """Closes the connection to the OpenWebNet zigbee gateway"""
         # this method may be invoked on an empty instance of OWNSession, so be robust against Nones:
+		self._logger.debug("Zigbee session closing")
         if self.server is not None:
             self.server.close()
             await self.server.wait_closed()
             self._gateway.port = None
-			self.logger.debug("Server closed")
+			self._logger.debug("Server closed")
         if self.command is not None:
             self.command.cancel()
             await self.command
             self.command = None
-			self.logger.debug("Command closed")
+			self._logger.debug("Command closed")
         if self.receiver is not None:
             self.receiver.cancel()
             await self.receiver
             self.receiver = None
-			self.logger.debug("Receiver closed")
+			self._logger.debug("Receiver closed")
+		self._logger.debug("Zigbee session closed")
 
 class OWNSession:
     """Connection to OpenWebNet gateway"""
