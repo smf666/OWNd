@@ -301,7 +301,7 @@ class zigbeeSession:
                 self._logger.debug("SERIAL REC waiting message...")
                 raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
                 message = raw_response.decode()
-                self._logger.debug("SEREIAL REC receive <%s>",message)
+                self._logger.debug("SERIAL REC receive <%s>",message)
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
                     if(msg.is_event):
