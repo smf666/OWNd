@@ -259,7 +259,7 @@ class zigbeeSession:
     async def _cmd_receiver(self):
         while True:
             try:
-                self._logger.debug("waiting message...")
+                self._logger.debug("TCP REC waiting message...")
                 raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
                 message = raw_request.decode()
                 self._logger.debug(" TCP REC receive <%s>",message)
@@ -298,7 +298,7 @@ class zigbeeSession:
     async def _serial_receiver(self):
         while True:
             try:
-                self._logger.debug("waiting message...")
+                self._logger.debug("REC waiting message...")
                 raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
                 message = raw_response.decode()
                 self._logger.debug("REC receive <%s>",message)
