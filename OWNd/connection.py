@@ -260,7 +260,8 @@ class zigbeeSession:
         while True:
             try:
                 self._logger.debug("TCP REC waiting message...")
-                raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
+                await asyncio.sleep(0.1)
+				raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
                 message = raw_request.decode()
                 self._logger.debug(" TCP REC receive <%s>",message)
                 if message.startswith("*#"):
