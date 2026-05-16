@@ -260,7 +260,6 @@ class zigbeeSession:
         while True:
             try:
                 self._logger.debug("TCP REC waiting message...")
-                await asyncio.sleep(0.1)
                 raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
                 message = raw_request.decode()
                 self._logger.debug(" TCP REC receive <%s>",message)
@@ -276,14 +275,17 @@ class zigbeeSession:
                     elif message.startswith("*2*2"):
                         self._logger.debug("TCP REC Fix inverted cover command Down -> Up")
                         message = message.replace("*2*2","*2*1",1)
-                self._logger.debug("TCP REC before send")
-                self._streamWriterSerial.write(message.encode())
                 self._logger.debug("TCP REC before event clear")
                 self.event.clear()
+                self._logger.debug("TCP REC before send")
+                self._streamWriterSerial.write(message.encode())
                 self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
                 self._logger.debug("TCP REC before event wait")
-                await self.event.wait()
+                try:
+                    await self.event.wait(timeout=10.0)
+                except asyncio.TimeoutError:
+                    self._logger.debug("TCP REC event Timeout !!")
                 self._logger.debug("TCP REC end loop")
 
             except TimeoutError:
