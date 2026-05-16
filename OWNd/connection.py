@@ -325,7 +325,7 @@ class zigbeeSession:
                             if self.buggyDim:
                                 self._logger.debug("SERIAL REC workaround buggy DIM")
                                 if self._streamWriterCmd is not None:
-									self._streamWriterCmd.write("*#*1##".encode())
+                                    self._streamWriterCmd.write("*#*1##".encode())
                                 self.event.set()
                                 # event = False
                         self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
