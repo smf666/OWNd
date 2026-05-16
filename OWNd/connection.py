@@ -275,15 +275,15 @@ class zigbeeSession:
                     elif message.startswith("*2*2"):
                         self._logger.debug("TCP REC Fix inverted cover command Down -> Up")
                         message = message.replace("*2*2","*2*1",1)
-                self._logger("TCP REC before send")
+                self._logger.debug("TCP REC before send")
                 self._streamWriterSerial.write(message.encode())
-                self._logger("TCP REC before event clear")
+                self._logger.debug("TCP REC before event clear")
                 self.event.clear()
-                self._logger("TCP REC before drain")
+                self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
-                self._logger("TCP REC before event wait")
+                self._logger.debug("TCP REC before event wait")
                 await self.event.wait()
-                self._logger("TCP REC end loop")
+                self._logger.debug("TCP REC end loop")
 
             except TimeoutError:
                 self._logger.debug("TCP REC Request TimeOut")
