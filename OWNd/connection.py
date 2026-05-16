@@ -281,7 +281,7 @@ class zigbeeSession:
                 self._streamWriterSerial.write(message.encode())
                 self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
-                self._logger.debug("TCP REC before event wait")
+                self._logger.debug("TCP REC before event wait %s", self.event)
                 await self.event.wait()
                 self._logger.debug("TCP REC end loop")
 
@@ -323,10 +323,10 @@ class zigbeeSession:
                             if self._streamWriterCmd is not None:
                                 self._streamWriterCmd.write(message.encode())
                             if self.buggyDim:
-                                self._logger.debug("SERIAL REC workaround buggy DIM")
+                                self._logger.debug("SERIAL REC workaround buggy DIM %s", self.event)
+                                self.event.set()
                                 if self._streamWriterCmd is not None:
                                     self._streamWriterCmd.write("*#*1##".encode())
-                                self.event.set()
                                 # event = False
                         self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
                         if self._streamWriterEvent is not None:
