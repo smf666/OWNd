@@ -285,7 +285,7 @@ class zigbeeSession:
                 try:
                     await self.event.wait(timeout=10.0)
                 except asyncio.TimeoutError:
-                    self._logger.debug("TCP REC event Timeout !!")
+                    self._logger.warning("TCP REC event Timeout !!")
                 self._logger.debug("TCP REC end loop")
 
             except TimeoutError:
