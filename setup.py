@@ -9,7 +9,7 @@ with open("README.md", encoding="utf-8", mode="r") as fh:
 
 setuptools.setup(
     name="OWNd2",
-    version="0.7.68",
+    version="0.7.69",
     author="smf666",
     url="https://github.com/smf666/OWNd",
     author_email="yetanotherjulien@gmail.com",
@@ -22,6 +22,6 @@ setuptools.setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    install_requires=["aiohttp", "pytz", "python-dateutil", "pyserial-asyncio" ],
+    install_requires=["aiohttp", "pytz", "python-dateutil", "pyserial-asyncio-fast" ],
     python_requires=">=3.8",
 )
