@@ -282,7 +282,7 @@ class zigbeeSession:
                 self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
                 self._logger.debug("TCP REC before event wait")
-                await self.event.wait(timeout=10.0)
+                await self.event.wait(timeout=1.0)
                 self._logger.debug("TCP REC end loop")
 
             except asyncio.TimeoutError:
