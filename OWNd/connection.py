@@ -323,6 +323,7 @@ class zigbeeSession:
                             if self._streamWriterCmd is not None:
                                 self._streamWriterCmd.write(message.encode())
                             if self.buggyDim:
+                                self._logger.debug("SERIAL REC workaround buggy DIM")
                                 self._streamWriterCmd.write("*#*1##".encode())
                                 self.event.set()
                                 event = False
