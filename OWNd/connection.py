@@ -270,10 +270,10 @@ class zigbeeSession:
                     self.dimReq = None
                 if self.invertedCover:
                     if message.startswith("*2*1"):
-                        self._logger.debug("Fix inverted cover command Up -> Down")
+                        self._logger.debug("TCP REC Fix inverted cover command Up -> Down")
                         message = message.replace("*2*1","*2*2",1)
                     elif message.startswith("*2*2"):
-                        self._logger.debug("Fix inverted cover command Down -> Up")
+                        self._logger.debug("TCP REC Fix inverted cover command Down -> Up")
                         message = message.replace("*2*2","*2*1",1)
                 self._streamWriterSerial.write(message.encode())
                 self.event.clear()
@@ -283,35 +283,35 @@ class zigbeeSession:
             except TimeoutError:
                 self._logger.debug("TCP REC Request TimeOut")
             except asyncio.IncompleteReadError:
-                self._logger.warning("Connexion closed by peer.")
+                self._logger.warning("TCP REC Connexion closed by peer.")
                 break
             except asyncio.CancelledError:
-                self._logger.debug("Cancel.")
+                self._logger.debug("TCP REC Cancel.")
                 break
 
         self._streamWriterCmd.close()
         await self._streamWriterCmd.wait_closed()
         self._streamWriterCmd = None
         self._streamReaderCmd = None
-        self._logger.info("Command connexion closed.")
+        self._logger.info("TCP REC Command connexion closed.")
 
     async def _serial_receiver(self):
         while True:
             try:
-                self._logger.debug("REC waiting message...")
+                self._logger.debug("SERIAL REC waiting message...")
                 raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
                 message = raw_response.decode()
-                self._logger.debug("REC receive <%s>",message)
+                self._logger.debug("SEREIAL REC receive <%s>",message)
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
                     if(msg.is_event):
                         if self.invertedCover:
                             if message.startswith("*2*1"):
-                                self._logger.debug("Fix inverted cover command Up -> Down")
+                                self._logger.debug("SERIAL REC Fix inverted cover command Up -> Down")
                                 message = message.replace("*2*1","*2*2",1)
                                 msg = OWNMessage.parse(message)
                             elif message.startswith("*2*2"):
-                                self._logger.debug("Fix inverted cover command Down -> Up")
+                                self._logger.debug("SERIAL REC Fix inverted cover command Down -> Up")
                                 message = message.replace("*2*2","*2*1",1)
                                 msg = OWNMessage.parse(message)
                         if msg.where is not None and msg.where == self.dimReq:
