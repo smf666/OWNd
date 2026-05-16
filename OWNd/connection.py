@@ -282,14 +282,11 @@ class zigbeeSession:
                 self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
                 self._logger.debug("TCP REC before event wait")
-                try:
-                    await self.event.wait(timeout=10.0)
-                except asyncio.TimeoutError:
-                    self._logger.warning("TCP REC event Timeout !!")
+                await self.event.wait(timeout=10.0)
                 self._logger.debug("TCP REC end loop")
 
-            except TimeoutError:
-                self._logger.debug("TCP REC Request TimeOut")
+            except asyncio.TimeoutError:
+                self._logger.warning("TCP REC Request TimeOut")
             except asyncio.IncompleteReadError:
                 self._logger.warning("TCP REC Connexion closed by peer.")
                 break
