@@ -351,7 +351,7 @@ class zigbeeSession:
                     else:
                         self._logger.debug("SERIAL REC receive message <%s>",msg.human_readable_log)
                         if self._streamWriterCmd is not None:
-                            self._streamWriterCmd.write(raw_response)
+                            self._streamWriterCmd.write(message.encode('utf-8'))
                             await self._streamWriterCmd.drain()
                         else:
                             self._logger.warning("SERIAL REC no CMD writer (2)") 
