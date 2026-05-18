@@ -208,7 +208,7 @@ class ZigbeeOWNGateway(OWNGateway):
 
 class zigbeeSession:
 
-    SEPARATOR = "##".encode()
+    SEPARATOR = "##".encode('utf-8')
 
     def __init__(self, gateway: OWNGateway = None, logger: logging.Logger = None):
         self._gateway = gateway
@@ -261,7 +261,7 @@ class zigbeeSession:
             try:
                 self._logger.debug("TCP REC waiting message...")
                 raw_request = await self._streamReaderCmd.readuntil(self.SEPARATOR)
-                message = raw_request.decode()
+                message = raw_request.decode('utf-8')
                 self._logger.debug(" TCP REC receive <%s>",message)
                 if message.startswith("*#"):
                     msg = OWNMessage.parse(message)
@@ -278,7 +278,7 @@ class zigbeeSession:
                 self._logger.debug("TCP REC before event clear")
                 self.event.clear()
                 self._logger.debug("TCP REC before send")
-                self._streamWriterSerial.write(message.encode())
+                self._streamWriterSerial.write(message.encode('utf-8'))
                 self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
                 self._logger.debug("TCP REC before event wait %s", self.event)
@@ -304,8 +304,9 @@ class zigbeeSession:
         while True:
             try:
                 self._logger.debug("SERIAL REC waiting message...")
-                raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
-                message = raw_response.decode()
+                raw_response = await self._streamReaderSerial.readuntil(self.SEPARATOR)
+                # raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
+                message = raw_response.decode('utf-8')
                 self._logger.debug("SERIAL REC receive <%s>",message)
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
@@ -321,16 +322,16 @@ class zigbeeSession:
                                 msg = OWNMessage.parse(message)
                         if msg.where is not None and msg.where == self.dimReq:
                             if self._streamWriterCmd is not None:
-                                self._streamWriterCmd.write(message.encode())
+                                self._streamWriterCmd.write(message.encode('utf-8'))
                             if self.buggyDim:
                                 self._logger.debug("SERIAL REC workaround buggy DIM %s", self.event)
                                 self.event.set()
                                 if self._streamWriterCmd is not None:
-                                    self._streamWriterCmd.write("*#*1##".encode())
+                                    self._streamWriterCmd.write("*#*1##".encode('utf-8'))
                                 # event = False
                         self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
                         if self._streamWriterEvent is not None:
-                            self._streamWriterEvent.write(message.encode())
+                            self._streamWriterEvent.write(message.encode('utf-8'))
                     else:
                         self._logger.debug("SERIAL REC receive message <%s>",msg.human_readable_log)
                         if self._streamWriterCmd is not None:
@@ -361,10 +362,10 @@ class zigbeeSession:
 
     async def handle_client(self, reader : asyncio.StreamReader, writer: asyncio.StreamWriter):
         # on client connection send ACK and wait for connection type
-        writer.write(f"*#*1##".encode())
+        writer.write(f"*#*1##".encode('utf-8'))
         await writer.drain()
         raw_response = await reader.readuntil(self.SEPARATOR)
-        resulting_message = OWNSignaling(raw_response.decode())
+        resulting_message = OWNSignaling(raw_response.decode('utf-8'))
         self._logger.debug("%s Reply: `%s`", self._gateway.log_id, resulting_message)
         if resulting_message._type == "EVENT_SESSION":
             if self._streamWriterEvent is not None:
@@ -386,7 +387,7 @@ class zigbeeSession:
         else:
             self._logger.error("%s Unexpected reply. Closing.", self._gateway.log_id)
             writer.close()        
-        writer.write(f"*#*1##".encode())
+        writer.write(f"*#*1##".encode('utf-8'))
         await writer.drain()
 
     async def _negotiate(self) -> dict:
@@ -396,7 +397,7 @@ class zigbeeSession:
         self._logger.debug(
             "%s Negotiating session.", self._gateway.log_id            
         )
-        self._streamWriterSerial.write(f"*13*60*##".encode())
+        self._streamWriterSerial.write(f"*13*60*##".encode('utf-8'))
         try:
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 5)
 
@@ -404,7 +405,7 @@ class zigbeeSession:
             self._streamReaderSerial.readuntil(OWNSession.SEPARATOR),
                 timeout=5,
             )
-            resulting_message = OWNSignaling(raw_response.decode())
+            resulting_message = OWNSignaling(raw_response.decode('utf-8'))
             if resulting_message.is_nack():
                 self._logger.error(
                     "%s Error while opening session.", self._gateway.log_id
@@ -440,14 +441,14 @@ class zigbeeSession:
         # check firmware version of gateway
         try:
             self._logger.debug("%s Retrieve firmware version", self._gateway.log_id)
-            self._streamWriterSerial.write("*#13**16##".encode())
+            self._streamWriterSerial.write("*#13**16##".encode('utf-8'))
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
                 raw_response = await asyncio.wait_for(
                 self._streamReaderSerial.readuntil(OWNSession.SEPARATOR),
                     timeout=1,
                 )
-                resulting_message = OWNMessage.parse(raw_response.decode())
+                resulting_message = OWNMessage.parse(raw_response.decode('utf-8'))
                 if isinstance(resulting_message, OWNSignaling):
                     self._logger.debug("%s received signaling %s", self._gateway.log_id, resulting_message._human_readable_log)
                     if resulting_message.is_nack():
@@ -458,13 +459,13 @@ class zigbeeSession:
                     elif resulting_message.is_ack():
                         break
                 else:
-                    resulting_message = OWNGatewayEvent(raw_response.decode())
+                    resulting_message = OWNGatewayEvent(raw_response.decode('utf-8'))
                     if isinstance(resulting_message, OWNGatewayEvent):
                         self._logger.debug("%s received event %s", self._gateway.log_id, resulting_message._human_readable_log)
                         if resulting_message._firmware_version is not None:
                             self.firmware = resulting_message._firmware_version
                     else:
-                        self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode())
+                        self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode('utf-8'))
 
         except asyncio.TimeoutError:
             error = True
@@ -481,13 +482,13 @@ class zigbeeSession:
         # put gateway in supervisor mode
         try:
             self._logger.info("%s Setting up supervisor mode", self._gateway.log_id)
-            self._streamWriterSerial.write("*13*66*##".encode())
+            self._streamWriterSerial.write("*13*66*##".encode('utf-8'))
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
                 raw_response = await asyncio.wait_for(
                 self._streamReaderSerial.readuntil(OWNSession.SEPARATOR), timeout=1)
 
-                resulting_message = OWNMessage.parse(raw_response.decode())
+                resulting_message = OWNMessage.parse(raw_response.decode('utf-8'))
                 if isinstance(resulting_message, OWNSignaling):
                     self._logger.debug("%s received signaling %s", self._gateway.log_id, resulting_message._human_readable_log)
                     if resulting_message.is_nack():
@@ -499,7 +500,7 @@ class zigbeeSession:
                         self._logger.debug("%s Gateway set in supervisor mode.", self._gateway.log_id)
                         break
                 else:
-                    self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode())
+                    self._logger.debug("%s received  %s but not translated.", self._gateway.log_id, raw_response.decode('utf-8'))
 
         except asyncio.TimeoutError:
             error = True
@@ -538,7 +539,7 @@ class zigbeeSession:
 class OWNSession:
     """Connection to OpenWebNet gateway"""
 
-    SEPARATOR = "##".encode()
+    SEPARATOR = "##".encode('utf-8')
 
     def __init__(
         self,
@@ -709,11 +710,11 @@ class OWNSession:
             "%s Negotiating %s session.", self._gateway.log_id, self._type
         )
 
-        self._stream_writer.write(f"*99*{type_id}##".encode())
+        self._stream_writer.write(f"*99*{type_id}##".encode('utf-8'))
         await self._stream_writer.drain()
 
         raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-        resulting_message = OWNSignaling(raw_response.decode())
+        resulting_message = OWNSignaling(raw_response.decode('utf-8'))
         # self._logger.debug("%s Reply: `%s`", self._gateway.log_id, resulting_message)
 
         if resulting_message.is_nack():
@@ -724,7 +725,7 @@ class OWNSession:
             error_message = "connection_refused"
 
         raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-        resulting_message = OWNSignaling(raw_response.decode())
+        resulting_message = OWNSignaling(raw_response.decode('utf-8'))
         if resulting_message.is_nack():
             error = True
             error_message = "negotiation_refused"
@@ -747,7 +748,7 @@ class OWNSession:
                     "%s Connection requires a password but none was provided.",
                     self._gateway.log_id,
                 )
-                self._stream_writer.write("*#*0##".encode())
+                self._stream_writer.write("*#*0##".encode('utf-8'))
                 await self._stream_writer.drain()
             else:
                 if resulting_message.is_sha_1():
@@ -761,16 +762,16 @@ class OWNSession:
                     self._gateway.log_id,
                     method,
                 )
-                self._stream_writer.write("*#*1##".encode())
+                self._stream_writer.write("*#*1##".encode('utf-8'))
                 await self._stream_writer.drain()
                 raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-                resulting_message = OWNSignaling(raw_response.decode())
+                resulting_message = OWNSignaling(raw_response.decode('utf-8'))
                 if resulting_message.is_nonce():
                     server_random_string_ra = resulting_message.nonce
                     # self._logger.debug("%s Received Ra.", self._gateway.log_id)
                     key = "".join(random.choices(string.digits, k=56))
                     client_random_string_rb = self._hex_string_to_int_string(
-                        hmac.new(key=key.encode(), digestmod=method).hexdigest()
+                        hmac.new(key=key.encode('utf-8'), digestmod=method).hexdigest()
                     )
                     # self._logger.debug("%s Generated Rb.", self._gateway.log_id)
                     hashed_password = f"*#{client_random_string_rb}*{self._encode_hmac_password(method=method, password=self._gateway.password, nonce_a=server_random_string_ra, nonce_b=client_random_string_rb)}##"  # pylint: disable=line-too-long
@@ -779,14 +780,14 @@ class OWNSession:
                         self._gateway.log_id,
                         self._type,
                     )
-                    self._stream_writer.write(hashed_password.encode())
+                    self._stream_writer.write(hashed_password.encode('utf-8'))
                     await self._stream_writer.drain()
                     try:
                         raw_response = await asyncio.wait_for(
                             self._stream_reader.readuntil(OWNSession.SEPARATOR),
                             timeout=5,
                         )
-                        resulting_message = OWNSignaling(raw_response.decode())
+                        resulting_message = OWNSignaling(raw_response.decode('utf-8'))
                         if resulting_message.is_nack():
                             error = True
                             error_message = "password_error"
@@ -809,7 +810,7 @@ class OWNSession:
                                 # self._logger.debug(
                                 #     "%s Server identity confirmed.", self._gateway.log_id
                                 # )
-                                self._stream_writer.write("*#*1##".encode())
+                                self._stream_writer.write("*#*1##".encode('utf-8'))
                                 await self._stream_writer.drain()
                                 self._logger.debug(
                                     "%s Session established successfully.", self._gateway.log_id
@@ -819,7 +820,7 @@ class OWNSession:
                                     "%s Server identity could not be confirmed.",
                                     self._gateway.log_id,
                                 )
-                                self._stream_writer.write("*#*0##".encode())
+                                self._stream_writer.write("*#*0##".encode('utf-8'))
                                 await self._stream_writer.drain()
                                 error = True
                                 error_message = "negociation_error"
@@ -853,10 +854,10 @@ class OWNSession:
                 self._logger.debug(
                     "%s Sending %s session password.", self._gateway.log_id, self._type
                 )
-                self._stream_writer.write(hashed_password.encode())
+                self._stream_writer.write(hashed_password.encode('utf-8'))
                 await self._stream_writer.drain()
                 raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-                resulting_message = OWNSignaling(raw_response.decode())
+                resulting_message = OWNSignaling(raw_response.decode('utf-8'))
                 # self._logger.debug("%s Reply: `%s`", self._gateway.log_id, resulting_message)
                 if resulting_message.is_nack():
                     error = True
@@ -963,10 +964,10 @@ class OWNSession:
                 + self._int_string_to_hex_string(nonce_b)
                 + "736F70653E"
                 + "636F70653E"
-                + hashlib.sha1(password.encode()).hexdigest()
+                + hashlib.sha1(password.encode('utf-8')).hexdigest()
             )
             return self._hex_string_to_int_string(
-                hashlib.sha1(message.encode()).hexdigest()
+                hashlib.sha1(message.encode('utf-8')).hexdigest()
             )
         elif method == "sha256":
             message = (
@@ -974,10 +975,10 @@ class OWNSession:
                 + self._int_string_to_hex_string(nonce_b)
                 + "736F70653E"
                 + "636F70653E"
-                + hashlib.sha256(password.encode()).hexdigest()
+                + hashlib.sha256(password.encode('utf-8')).hexdigest()
             )
             return self._hex_string_to_int_string(
-                hashlib.sha256(message.encode()).hexdigest()
+                hashlib.sha256(message.encode('utf-8')).hexdigest()
             )
         else:
             return None
@@ -989,19 +990,19 @@ class OWNSession:
             message = (
                 self._int_string_to_hex_string(nonce_a)
                 + self._int_string_to_hex_string(nonce_b)
-                + hashlib.sha1(password.encode()).hexdigest()
+                + hashlib.sha1(password.encode('utf-8')).hexdigest()
             )
             return self._hex_string_to_int_string(
-                hashlib.sha1(message.encode()).hexdigest()
+                hashlib.sha1(message.encode('utf-8')).hexdigest()
             )
         elif method == "sha256":
             message = (
                 self._int_string_to_hex_string(nonce_a)
                 + self._int_string_to_hex_string(nonce_b)
-                + hashlib.sha256(password.encode()).hexdigest()
+                + hashlib.sha256(password.encode('utf-8')).hexdigest()
             )
             return self._hex_string_to_int_string(
-                hashlib.sha256(message.encode()).hexdigest()
+                hashlib.sha256(message.encode('utf-8')).hexdigest()
             )
         else:
             return None
@@ -1033,7 +1034,7 @@ class OWNEventSession(OWNSession):
         It will read one frame and return it as an OWNMessage object"""
         try:
             data = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-            _decoded_data = data.decode()
+            _decoded_data = data.decode('utf-8')
             _message = OWNMessage.parse(_decoded_data)
             return _message if _message else _decoded_data
         except asyncio.IncompleteReadError:
@@ -1076,18 +1077,18 @@ class OWNCommandSession(OWNSession):
         actively reconnecting it if it had been reset."""
 
         try:
-            self._stream_writer.write(str(message).encode())
+            self._stream_writer.write(str(message).encode('utf-8'))
             await self._stream_writer.drain()
             raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-            resulting_message = OWNMessage.parse(raw_response.decode())
+            resulting_message = OWNMessage.parse(raw_response.decode('utf-8'))
             if (
                 isinstance(resulting_message, OWNSignaling)
                 and resulting_message.is_nack()
             ):
-                self._stream_writer.write(str(message).encode())
+                self._stream_writer.write(str(message).encode('utf-8'))
                 await self._stream_writer.drain()
                 raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-                resulting_message = OWNSignaling(raw_response.decode())
+                resulting_message = OWNSignaling(raw_response.decode('utf-8'))
                 if resulting_message.is_nack():
                     self._logger.error(
                         "%s Could not send message `%s`.", self._gateway.log_id, message
@@ -1129,7 +1130,7 @@ class OWNCommandSession(OWNSession):
                     resulting_message,
                 )
                 raw_response = await self._stream_reader.readuntil(OWNSession.SEPARATOR)
-                resulting_message = OWNSignaling(raw_response.decode())
+                resulting_message = OWNSignaling(raw_response.decode('utf-8'))
                 if resulting_message.is_nack():
                     self._logger.error(
                         "%s Could not send message `%s`.", self._gateway.log_id, message
