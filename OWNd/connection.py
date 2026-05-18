@@ -339,6 +339,9 @@ class zigbeeSession:
                                 self._logger.debug("SERIAL REC workaround buggy DIM %s", self.event)
                                 if self._streamWriterCmd is not None:
                                     self._streamWriterCmd.write("*#*1##".encode('utf-8'))
+                                else:
+                                    self._logger.warning("SERIAL REC no CMD writer") 
+                                self._logger.debug("SERIAL REC before unlock event %s", self.event)
                                 self.event.set()
                                 # event = False
                         self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
@@ -348,6 +351,9 @@ class zigbeeSession:
                         self._logger.debug("SERIAL REC receive message <%s>",msg.human_readable_log)
                         if self._streamWriterCmd is not None:
                             self._streamWriterCmd.write(raw_response)
+                        else:
+                            self._logger.warning("SERIAL REC no CMD writer (2)") 
+                        self._logger.debug("SERIAL REC before unlock event %s (2)", self.event)
                         self.event.set()
                         # TODO check if there are case to not clear...
                         # event = False
