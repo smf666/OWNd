@@ -337,9 +337,9 @@ class zigbeeSession:
                                 self._streamWriterCmd.write(message.encode('utf-8'))
                             if self.buggyDim:
                                 self._logger.debug("SERIAL REC workaround buggy DIM %s", self.event)
-                                self.event.set()
                                 if self._streamWriterCmd is not None:
                                     self._streamWriterCmd.write("*#*1##".encode('utf-8'))
+                                self.event.set()
                                 # event = False
                         self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
                         if self._streamWriterEvent is not None:
@@ -348,8 +348,8 @@ class zigbeeSession:
                         self._logger.debug("SERIAL REC receive message <%s>",msg.human_readable_log)
                         if self._streamWriterCmd is not None:
                             self._streamWriterCmd.write(raw_response)
-                        # TODO check if there are case to not clear...
                         self.event.set()
+                        # TODO check if there are case to not clear...
                         # event = False
                 else:
                     self._logger.warning("SERIAL REC cannot translate <%s>",message)
