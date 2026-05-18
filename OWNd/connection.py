@@ -480,7 +480,7 @@ class zigbeeSession:
         self._logger.info("%s Gateway firmware is %s (cover inverted=%s, DIM bug=%s).", self._gateway.log_id, self.firmware, self.invertedCover, self.buggyDim)
         # put gateway in supervisor mode
         try:
-            self._logger.debug("%s Setting up supervisor mode", self._gateway.log_id)
+            self._logger.info("%s Setting up supervisor mode", self._gateway.log_id)
             self._streamWriterSerial.write("*13*66*##".encode())
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
