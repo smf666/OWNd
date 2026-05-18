@@ -275,11 +275,9 @@ class zigbeeSession:
                     elif message.startswith("*2*2"):
                         self._logger.debug("TCP REC Fix inverted cover command Down -> Up")
                         message = message.replace("*2*2","*2*1",1)
-                self._logger.debug("TCP REC before event clear")
                 self.event.clear()
                 self._logger.debug("TCP REC before send")
                 self._streamWriterSerial.write(message.encode('utf-8'))
-                self._logger.debug("TCP REC before drain")
                 await self._streamWriterSerial.drain()
                 self._logger.debug("TCP REC before event wait %s", self.event)
                 await self.event.wait()
@@ -335,10 +333,12 @@ class zigbeeSession:
                         if msg.where is not None and msg.where == self.dimReq:
                             if self._streamWriterCmd is not None:
                                 self._streamWriterCmd.write(message.encode('utf-8'))
+                                await self._streamWriterCmd.drain()
                             if self.buggyDim:
                                 self._logger.debug("SERIAL REC workaround buggy DIM %s", self.event)
                                 if self._streamWriterCmd is not None:
                                     self._streamWriterCmd.write("*#*1##".encode('utf-8'))
+                                    await self._streamWriterCmd.drain()
                                 else:
                                     self._logger.warning("SERIAL REC no CMD writer") 
                                 self._logger.debug("SERIAL REC before unlock event %s", self.event)
@@ -347,10 +347,12 @@ class zigbeeSession:
                         self._logger.debug("SERIAL REC receive event <%s>",msg.human_readable_log)
                         if self._streamWriterEvent is not None:
                             self._streamWriterEvent.write(message.encode('utf-8'))
+                            await self._streamWriterEvent.drain()
                     else:
                         self._logger.debug("SERIAL REC receive message <%s>",msg.human_readable_log)
                         if self._streamWriterCmd is not None:
                             self._streamWriterCmd.write(raw_response)
+                            await self._streamWriterCmd.drain()
                         else:
                             self._logger.warning("SERIAL REC no CMD writer (2)") 
                         self._logger.debug("SERIAL REC before unlock event %s (2)", self.event)
@@ -416,6 +418,7 @@ class zigbeeSession:
             "%s Negotiating session.", self._gateway.log_id            
         )
         self._streamWriterSerial.write(f"*13*60*##".encode('utf-8'))
+        await self._streamWriterSerial.drain()
         try:
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 5)
 
@@ -460,6 +463,7 @@ class zigbeeSession:
         try:
             self._logger.debug("%s Retrieve firmware version", self._gateway.log_id)
             self._streamWriterSerial.write("*#13**16##".encode('utf-8'))
+            await self._streamWriterSerial.drain()
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
                 raw_response = await asyncio.wait_for(
@@ -501,6 +505,7 @@ class zigbeeSession:
         try:
             self._logger.info("%s Setting up supervisor mode", self._gateway.log_id)
             self._streamWriterSerial.write("*13*66*##".encode('utf-8'))
+            await self._streamWriterSerial.drain()
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
                 raw_response = await asyncio.wait_for(
