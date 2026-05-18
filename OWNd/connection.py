@@ -301,7 +301,7 @@ class zigbeeSession:
         self._logger.info("TCP REC Command connexion closed.")
 
     async def _serial_receiver(self):
-		buffer = ""
+        buffer = ""
         while True:
             try:
                 while True:
