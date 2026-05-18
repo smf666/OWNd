@@ -2,7 +2,7 @@
 
 import socket
 import asyncio
-import serial_asyncio
+import serial_asyncio_fast
 
 import hmac
 import hashlib
