@@ -301,12 +301,24 @@ class zigbeeSession:
         self._logger.info("TCP REC Command connexion closed.")
 
     async def _serial_receiver(self):
+		buffer = ""
         while True:
             try:
-                self._logger.debug("SERIAL REC waiting message...")
-                raw_response = await self._streamReaderSerial.readuntil(self.SEPARATOR)
+                while True:
+                    tmp_out = buffer.split("##",1)
+                    if(len(tmp_out)> 1):
+                        message = tmp_out[0] + "##"
+                        buffer = tmp_out[1]
+                        self._logger.debug("SERIAL REC buf = <%s>, message = <%s>", buffer, message)
+                        break
+                    else:
+                        self._logger.debug("SERIAL REC buf = <%s>, waiting message...", buffer)           
+                        raw_message = await self._streamReaderSerial.read(40)
+                        buffer += raw_message.decode('utf-8')
+                
+                # raw_response = await self._streamReaderSerial.readuntil(self.SEPARATOR)
                 # raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
-                message = raw_response.decode('utf-8')
+                # message = raw_response.decode('utf-8')
                 self._logger.debug("SERIAL REC receive <%s>",message)
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
