@@ -9,7 +9,7 @@ with open("README.md", encoding="utf-8", mode="r") as fh:
 
 setuptools.setup(
     name="OWNd2",
-    version="0.7.69",
+    version="0.7.70",
     author="smf666",
     url="https://github.com/smf666/OWNd",
     author_email="yetanotherjulien@gmail.com",
