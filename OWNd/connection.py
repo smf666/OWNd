@@ -238,7 +238,7 @@ class zigbeeSession:
         (
             self._streamReaderSerial,
             self._streamWriterSerial,
-        ) = await serial_asyncio.open_serial_connection(url=self._gateway._serial_port, baudrate=19200)
+        ) = await serial_asyncio_fast.open_serial_connection(url=self._gateway._serial_port, baudrate=19200)
 
         dict = await self._negotiate()
         if dict["Success"] is not True:
