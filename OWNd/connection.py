@@ -239,27 +239,14 @@ class zigbeeSession:
             self._streamReaderSerial,
             self._streamWriterSerial,
         ) = await serial_asyncio_fast.open_serial_connection(url=self._gateway._serial_port, baudrate=19200)
-        self._logger.debug("%s Serial connection established.",self._gateway.log_id)
-
-        await asyncio.sleep(20)
-        self._logger.debug("%s Start negociation <%s> <%>.", self._gateway.log_id, self._streamReaderSerial,
-            self._streamWriterSerial)
         dict = await self._negotiate()
         if dict["Success"] is not True:
             return dict
         
-        await asyncio.sleep(20)
-        self._logger.debug("%s Start configuration <%s> <%>.",self._gateway.log_id, self._streamReaderSerial,
-            self._streamWriterSerial)
         dict = await self._serial_configure()
         if dict["Success"] is not True:
             return dict
 
-        self._logger.debug("%s Configuration done <%s> <%>.",self._gateway.log_id, self._streamReaderSerial,
-            self._streamWriterSerial)
-        await asyncio.sleep(20)
-        self._logger.debug("%s Starting TCP server <%s> <%>.",self._gateway.log_id, self._streamReaderSerial,
-            self._streamWriterSerial)        
         #open server socket for event / command
         self.server = await asyncio.start_server( client_connected_cb = self.handle_client, host="localhost", port=self._gateway.port if self._gateway.port is not None else 0)
         self._logger.debug(
@@ -304,6 +291,7 @@ class zigbeeSession:
                 self._logger.debug("TCP REC Cancel.")
                 break
 
+        self._logger.debug("TCP REC Command connexion closing...")
         self._streamWriterCmd.close()
         await self._streamWriterCmd.wait_closed()
         self._streamWriterCmd = None
@@ -379,6 +367,7 @@ class zigbeeSession:
                 self._logger.debug("SERIAL REC Cancel.")
                 break
 
+        self._logger.debug("SERIAL REC connexion closing...")
         if self._streamWriterCmd is not None:
             self._streamWriterCmd.close()
             await self._streamWriterCmd.wait_closed()
@@ -390,7 +379,7 @@ class zigbeeSession:
         await self._streamWriterSerial.wait_closed()
         self._streamWriterSerial = None
         self._streamReaderSerial = None
-        self._logger.info("Serial connexion closed.")
+        self._logger.info("SERIAL REC connexion closed.")
 
     async def handle_client(self, reader : asyncio.StreamReader, writer: asyncio.StreamWriter):
         # on client connection send ACK and wait for connection type
@@ -400,22 +389,35 @@ class zigbeeSession:
         resulting_message = OWNSignaling(raw_response.decode('utf-8'))
         self._logger.debug("%s Reply: `%s`", self._gateway.log_id, resulting_message)
         if resulting_message._type == "EVENT_SESSION":
+            old_writer = None
             if self._streamWriterEvent is not None:
-               self._streamWriterEvent.close()
-               await self._streamWriterEvent.wait_closed()
-               self._logger.debug("%s Previous Event session closed.", self._gateway.log_id)
+                old_writer = self._streamWriterEvent
+
             self._streamWriterEvent = writer
             self._logger.info("%s New Event session opened.", self._gateway.log_id)
+            
+            if old_writer is not None:            
+                old_writer.close()
+                await self.old_writer.wait_closed()
+                self._logger.debug("%s Previous Event session closed.", self._gateway.log_id)
+
         elif resulting_message._type == "COMMAND_SESSION":
+            old_writer = None
             if self._streamWriterCmd is not None:
-               self._streamWriterCmd.close()
-               await self._streamWriterCmd.wait_closed()
-               self.command.cancel()
-               self._logger.debug("%s Previous Command session closed.", self._gateway.log_id)
+                old_writer = self._streamWriterCmd
+                self.command.cancel()
+                await self.command
+
             self._streamWriterCmd = writer
             self._streamReaderCmd = reader
             self._logger.info("%s New Command session opened.", self._gateway.log_id)
             self.command = asyncio.create_task(self._cmd_receiver())
+            
+            if old_writer is not None:            
+               old_writer.close()
+               await old_writer.wait_closed()
+               self._logger.debug("%s Previous Command session closed.", self._gateway.log_id)
+                
         else:
             self._logger.error("%s Unexpected reply. Closing.", self._gateway.log_id)
             writer.close()        
