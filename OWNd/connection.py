@@ -553,8 +553,8 @@ class zigbeeSession:
         if self.server is not None:
             self._logger.debug("Server closing")
             self.server.close()
-            self._logger.debug("Waiting server closure")
-            await self.server.wait_closed()
+            # self._logger.debug("Waiting server closure")
+            # await self.server.wait_closed()
             self._gateway.port = None
             self._logger.debug("Server closed")
         self._logger.debug("Zigbee session closed")
