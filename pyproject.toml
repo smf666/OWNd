@@ -1,0 +1,42 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=77.0"]
+
+[project]
+name = "OWNd2"
+license = "GNU General Public License v3 (GPLv3)"
+license-files = ["LICENSE"]
+description = "Python interface for the OpenWebNet protocol"
+readme = "README.md"
+authors = [{ name = "smf666" }]
+requires-python = ">=3.9"
+classifiers = [
+  'Programming Language :: Python :: 3.9',
+  'Development Status :: 5 - Production/Stable',
+  'Intended Audience :: Developers',
+  'Intended Audience :: End Users/Desktop',
+  'Natural Language :: English',
+  'Operating System :: OS Independent',
+  'Programming Language :: Python',
+  'Programming Language :: Python :: 3',
+  'Programming Language :: Python :: 3.9',
+  'Programming Language :: Python :: 3.10',
+  'Programming Language :: Python :: 3.11',
+  'Programming Language :: Python :: 3.12',
+  'Programming Language :: Python :: 3.13',
+  'Programming Language :: Python :: 3.14',
+  'Topic :: Communications',
+]
+dependencies = [
+  "aiohttp", 
+  "pytz", 
+  "python-dateutil", 
+  "pyserial-asyncio-fast",
+]
+dynamic = ["version"]
+
+[project.urls]
+"Source code" = "https://github.com/smf666/OWNd""
+
+[tool.setuptools.dynamic]
+version = { attr = "OWNd.__version__" }
