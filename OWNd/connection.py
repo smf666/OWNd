@@ -292,14 +292,10 @@ class zigbeeSession:
                 break
 
         self._logger.debug("TCP REC Command connexion closing...")
-        self._streamReaderCmd.close()
-        await self._streamReaderCmd.wait_closed()
-        self._streamReaderCmd = None
-        self._logger.debug("TCP REC Read connexion closed")
         self._streamWriterCmd.close()
         await self._streamWriterCmd.wait_closed()
         self._streamWriterCmd = None
-        self._logger.debug("TCP REC Write connexion closed")
+        self._streamReaderCmd = None
         self._logger.info("TCP REC Command connexion closed.")
 
     async def _serial_receiver(self):
@@ -368,14 +364,10 @@ class zigbeeSession:
             await self._streamWriterEvent.wait_closed()
             self._streamWriterEvent = None
             self._logger.debug("SERIAL REC Event link closed.")
-        self._streamReaderSerial.close()
-        await self._streamReaderSerial.wait_closed()
-        self._streamReaderSerial = None
-        self._logger.debug("SERIAL REC Serial reader closed.")
         self._streamWriterSerial.close()
         await self._streamWriterSerial.wait_closed()
         self._streamWriterSerial = None
-        self._logger.debug("SERIAL REC Serial writer closed.")
+        self._streamReaderSerial = None
         self._logger.info("SERIAL REC connexion closed.")
 
     async def handle_client(self, reader : asyncio.StreamReader, writer: asyncio.StreamWriter):
