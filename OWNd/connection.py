@@ -398,7 +398,7 @@ class zigbeeSession:
             
             if old_writer is not None:            
                 old_writer.close()
-                await self.old_writer.wait_closed()
+                await old_writer.wait_closed()
                 self._logger.debug("%s Previous Event session closed.", self._gateway.log_id)
 
         elif resulting_message._type == "COMMAND_SESSION":
