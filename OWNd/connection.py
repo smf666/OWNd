@@ -239,15 +239,27 @@ class zigbeeSession:
             self._streamReaderSerial,
             self._streamWriterSerial,
         ) = await serial_asyncio_fast.open_serial_connection(url=self._gateway._serial_port, baudrate=19200)
+        self._logger.debug("%s Serial connection established.",self._gateway.log_id)
 
+        await asyncio.sleep(20)
+        self._logger.debug("%s Start negociation <%s> <%>.", self._gateway.log_id, self._streamReaderSerial,
+            self._streamWriterSerial)
         dict = await self._negotiate()
         if dict["Success"] is not True:
             return dict
         
+        await asyncio.sleep(20)
+        self._logger.debug("%s Start configuration <%s> <%>.",self._gateway.log_id, self._streamReaderSerial,
+            self._streamWriterSerial)
         dict = await self._serial_configure()
         if dict["Success"] is not True:
             return dict
-        
+
+        self._logger.debug("%s Configuration done <%s> <%>.",self._gateway.log_id, self._streamReaderSerial,
+            self._streamWriterSerial)
+        await asyncio.sleep(20)
+        self._logger.debug("%s Starting TCP server <%s> <%>.",self._gateway.log_id, self._streamReaderSerial,
+            self._streamWriterSerial)        
         #open server socket for event / command
         self.server = await asyncio.start_server( client_connected_cb = self.handle_client, host="localhost", port=self._gateway.port if self._gateway.port is not None else 0)
         self._logger.debug(
