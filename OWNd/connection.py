@@ -292,8 +292,12 @@ class zigbeeSession:
                 break
 
         self._logger.debug("TCP REC Command connexion closing...")
+        self._streamReaderCmd.close()
+        await self._streamReaderCmd.wait_closed()
+        self._logger.debug("TCP REC Read connexion closed")
         self._streamWriterCmd.close()
         await self._streamWriterCmd.wait_closed()
+        self._logger.debug("TCP REC Write connexion closed")
         self._streamWriterCmd = None
         self._streamReaderCmd = None
         self._logger.info("TCP REC Command connexion closed.")
