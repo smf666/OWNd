@@ -305,7 +305,7 @@ class zigbeeSession:
                                                              stdout=asyncio.subprocess.PIPE,
                                                              stdrr=asyncio.subprocess.PIPE
                                                             )
-				stdout, stderr = await proc.communicate()
+                stdout, stderr = await proc.communicate()
                 self._logger.debug("SERIAL REC speed <%s> <%> <%>",stdout.decode().strip(), stderr.decode().strip(). proc.returnCode)
                 await asyncio.sleep(1)
                 message = ""
