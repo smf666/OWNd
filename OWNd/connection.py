@@ -299,25 +299,20 @@ class zigbeeSession:
         self._logger.info("TCP REC Command connexion closed.")
 
     async def _serial_receiver(self):
-        buffer = ""
         while True:
             try:
-                while True:
-                    tmp_out = buffer.split("##",1)
-                    if(len(tmp_out)> 1):
-                        message = tmp_out[0] + "##"
-                        buffer = tmp_out[1]
-                        self._logger.debug("SERIAL REC buf = <%s>, message = <%s>", buffer, message)
-                        break
-                    else:
-                        self._logger.debug("SERIAL REC buf = <%s>, waiting message...", buffer)           
-                        raw_message = await self._streamReaderSerial.read(40)
-                        buffer += raw_message.decode('utf-8')
-                
+                proc = await asyncio.create_subprocess_shell("stty -F /dev/ttyUSB0 speed", 
+                                                             stdout=asyncio.subprocess.PIPE,
+                                                             stdrr=asyncio.subprocess.PIPE
+                                                            )
+				stdout, stderr = await proc.communicate()
+                self._logger.debug("SERIAL REC speed <%s> <%> <%>",stdout.decode().strip(), stderr.decode().strip(). proc.returnCode)
+                await asyncio.sleep(1)
+                message = ""
                 # raw_response = await self._streamReaderSerial.readuntil(self.SEPARATOR)
                 # raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
                 # message = raw_response.decode('utf-8')
-                self._logger.debug("SERIAL REC receive <%s>",message)
+                #self._logger.debug("SERIAL REC receive <%s>",message)
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
                     if(msg.is_event):
@@ -432,7 +427,6 @@ class zigbeeSession:
             "%s Negotiating session.", self._gateway.log_id            
         )
         self._streamWriterSerial.write(f"*13*60*##".encode('utf-8'))
-        await self._streamWriterSerial.drain()
         try:
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 5)
 
@@ -477,7 +471,6 @@ class zigbeeSession:
         try:
             self._logger.debug("%s Retrieve firmware version", self._gateway.log_id)
             self._streamWriterSerial.write("*#13**16##".encode('utf-8'))
-            await self._streamWriterSerial.drain()
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
                 raw_response = await asyncio.wait_for(
@@ -519,7 +512,6 @@ class zigbeeSession:
         try:
             self._logger.info("%s Setting up supervisor mode", self._gateway.log_id)
             self._streamWriterSerial.write("*13*66*##".encode('utf-8'))
-            await self._streamWriterSerial.drain()
             await asyncio.wait_for(self._streamWriterSerial.drain(), timeout = 1)
             while True:
                 raw_response = await asyncio.wait_for(
