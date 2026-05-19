@@ -36,7 +36,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-"Source code" = "https://github.com/smf666/OWNd""
+"Source code" = "https://github.com/smf666/OWNd"
 
 [tool.setuptools.dynamic]
 version = { attr = "OWNd.__version__" }
