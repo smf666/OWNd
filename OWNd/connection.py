@@ -301,19 +301,10 @@ class zigbeeSession:
     async def _serial_receiver(self):
         while True:
             try:
-                self._logger.debug("SERIAL REC init")
-                proc = await asyncio.create_subprocess_shell("/sbin/stty -F /dev/ttyUSB0 speed", 
-                                                             stdout=asyncio.subprocess.PIPE,
-                                                             stdrr=asyncio.subprocess.PIPE
-                                                            )
-                self._logger.debug("SERIAL REC before run")
-                stdout, stderr = await proc.communicate()
-                self._logger.debug("SERIAL REC speed <%s> <%> <%>",stdout.decode().strip(), stderr.decode().strip(). proc.returnCode)
-                message = ""
                 # raw_response = await self._streamReaderSerial.readuntil(self.SEPARATOR)
-                # raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
-                # message = raw_response.decode('utf-8')
-                #self._logger.debug("SERIAL REC receive <%s>",message)
+                raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
+                message = raw_response.decode('utf-8')
+                self._logger.debug("SERIAL REC receive <%s>",message)
                 msg = OWNMessage.parse(message)
                 if(msg is not None):                    
                     if(msg.is_event):
