@@ -301,13 +301,14 @@ class zigbeeSession:
     async def _serial_receiver(self):
         while True:
             try:
-                proc = await asyncio.create_subprocess_shell("stty -F /dev/ttyUSB0 speed", 
+                self._logger.debug("SERIAL REC init")
+                proc = await asyncio.create_subprocess_shell("/sbin/stty -F /dev/ttyUSB0 speed", 
                                                              stdout=asyncio.subprocess.PIPE,
                                                              stdrr=asyncio.subprocess.PIPE
                                                             )
+                self._logger.debug("SERIAL REC before run")
                 stdout, stderr = await proc.communicate()
                 self._logger.debug("SERIAL REC speed <%s> <%> <%>",stdout.decode().strip(), stderr.decode().strip(). proc.returnCode)
-                await asyncio.sleep(1)
                 message = ""
                 # raw_response = await self._streamReaderSerial.readuntil(self.SEPARATOR)
                 # raw_response = await asyncio.wait_for(self._streamReaderSerial.readuntil(self.SEPARATOR), timeout=2)
