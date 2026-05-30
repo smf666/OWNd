@@ -29,6 +29,7 @@ MESSAGE_TYPE_MOTION = "motion_detected"
 MESSAGE_TYPE_PIR_SENSITIVITY = "pir_sensitivity"
 MESSAGE_TYPE_ILLUMINANCE = "illuminance_value"
 MESSAGE_TYPE_MOTION_TIMEOUT = "motion_timeout"
+MESSAGE_TYPE_TOGGLE = "toggle"
 
 CLIMATE_MODE_OFF = "off"
 CLIMATE_MODE_HEAT = "heat"
@@ -458,6 +459,10 @@ class OWNLightingEvent(OWNEvent):
             elif self._state >= 20 and self._state <= 29:  # Light blinking
                 self._blinker = 0.5 * (self._state - 19)
                 self._human_readable_log = f"Light {self._where}{self._interface_log_text} is blinking every {self._blinker}s."
+            elif self._state == 32:  # Toggle
+                self._type = MESSAGE_TYPE_TOGGLE
+                self._motion = True
+                self._human_readable_log = f"Light switch {self._where}{self._interface_log_text} toggled"
             elif self._state == 34:  # Motion detected
                 self._type = MESSAGE_TYPE_MOTION
                 self._motion = True
