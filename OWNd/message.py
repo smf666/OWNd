@@ -418,6 +418,7 @@ class OWNLightingEvent(OWNEvent):
         self._motion = False
         self._pir_sensitivity = None
         self._motion_timeout = None
+        self._command = None
 
         if self._what is not None and self._what != 1000:
             self._state = self._what
@@ -463,12 +464,15 @@ class OWNLightingEvent(OWNEvent):
                 self._human_readable_log = f"Light {self._where}{self._interface_log_text} is blinking every {self._blinker}s."
             elif self._state == 30:  # Dimmer up
                 self._type = MESSAGE_TYPE_DIMMER_UP
+                self._command = True
                 self._human_readable_log = f"Light dimmer {self._where}{self._interface_log_text} pushed up"
             elif self._state == 31:  # Dimmer down
                 self._type = MESSAGE_TYPE_DIMMER_UP
+                self._command = True
                 self._human_readable_log = f"Light dimmer {self._where}{self._interface_log_text} pushed down"
             elif self._state == 32:  # Toggle
                 self._type = MESSAGE_TYPE_TOGGLE
+                self._command = True
                 self._human_readable_log = f"Light switch {self._where}{self._interface_log_text} toggled"
             elif self._state == 34:  # Motion detected
                 self._type = MESSAGE_TYPE_MOTION
@@ -553,6 +557,21 @@ class OWNLightingEvent(OWNEvent):
     def motion_timeout(self) -> datetime.timedelta:
         return self._motion_timeout
 
+    @property
+    def is_command(self) -> bool:
+        return self._command
+
+    @property
+    def is_toogle(self) -> bool:
+        return self._type == MESSAGE_TYPE_TOGGLE
+
+    @property
+    def is_dimmer_up(self) -> bool:
+        return self._type == MESSAGE_TYPE_DIMMER_UP
+
+    @property
+    def is_dimmer_down(self) -> bool:
+        return self._type == MESSAGE_TYPE_DIMMER_DOWN
 
 class OWNAutomationEvent(OWNEvent):
     def __init__(self, data):
